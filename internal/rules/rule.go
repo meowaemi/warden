@@ -12,4 +12,5 @@ type Input struct {
 	Reason        string
 	ExitCode      int32
 	RestartCount  int32
+	MemoryLimitMi int
 }
