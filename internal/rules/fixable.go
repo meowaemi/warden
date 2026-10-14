@@ -64,7 +64,7 @@ func (r OOMLimit) ReportFix(result Result) messages.Message {
 	msg := r.Report(result.Input)
 
 	if result.Success {
-		msg.Severity = messages.Warning
+		msg.Severity = messages.Info
 		msg.Outcome = messages.Fixed
 		msg.Title = "Pod memory limit increased"
 		msg.Text = "The memory limit was successfully increased to prevent OOMKilled errors"

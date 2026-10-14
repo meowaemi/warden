@@ -1,0 +1,10 @@
+# Image reference is not valid at all -> InvalidImageName.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: invalid-image-name
+  namespace: warden-test
+spec:
+  containers:
+    - name: app
+      image: "Busybox:Latest::bad"

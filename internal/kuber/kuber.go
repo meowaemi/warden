@@ -16,11 +16,14 @@ import (
 )
 
 type Client struct {
-	cs *kubernetes.Clientset
+	cs          *kubernetes.Clientset
+	recentCrash time.Duration
 }
 
 // New creates a client from ~/.kube/config. It does not contact the cluster.
-func New() (*Client, error) {
+// A container that failed and is running again is still reported for
+// recentCrash after its last failure.
+func New(recentCrash time.Duration) (*Client, error) {
 	path := filepath.Join(homedir.HomeDir(), ".kube", "config")
 
 	cfg, err := clientcmd.BuildConfigFromFlags("", path)
@@ -35,7 +38,7 @@ func New() (*Client, error) {
 	}
 
 	logger.Log.Info("kube client created", "kubeconfig", path, "host", cfg.Host)
-	return &Client{cs: cs}, nil
+	return &Client{cs: cs, recentCrash: recentCrash}, nil
 }
 
 // Ping checks that the cluster answers by asking the API server for its
@@ -64,8 +67,8 @@ func (c *Client) Inputs(ctx context.Context, namespace string) ([]rules.Input, e
 		if in, ok := unschedulable(p); ok {
 			inputs = append(inputs, in)
 		}
-		inputs = appendContainers(inputs, p, p.Status.InitContainerStatuses, p.Spec.InitContainers)
-		inputs = appendContainers(inputs, p, p.Status.ContainerStatuses, p.Spec.Containers)
+		inputs = c.appendContainers(inputs, p, p.Status.InitContainerStatuses, p.Spec.InitContainers)
+		inputs = c.appendContainers(inputs, p, p.Status.ContainerStatuses, p.Spec.Containers)
 	}
 	return inputs, nil
 }
@@ -99,51 +102,90 @@ func unschedulable(p corev1.Pod) (rules.Input, bool) {
 
 // appendContainers adds an input for every problematic container in statuses.
 // specs are the matching container definitions, used to read memory limits.
-func appendContainers(inputs []rules.Input, p corev1.Pod, statuses []corev1.ContainerStatus, specs []corev1.Container) []rules.Input {
+func (c *Client) appendContainers(inputs []rules.Input, p corev1.Pod, statuses []corev1.ContainerStatus, specs []corev1.Container) []rules.Input {
 	for _, st := range statuses {
-		reason, message, exitCode, since := problem(st)
-		if reason == "" {
+		pr, ok := c.problem(st)
+		if !ok {
 			continue
 		}
 		inputs = append(inputs, rules.Input{
 			PodName:       p.Name,
 			Namespace:     p.Namespace,
 			ContainerName: st.Name,
-			Reason:        reason,
-			Message:       message,
-			ExitCode:      exitCode,
+			Reason:        pr.reason,
+			Message:       pr.message,
+			ExitCode:      pr.exitCode,
 			RestartCount:  st.RestartCount,
-			Since:         since,
+			Since:         pr.since,
+			Recovered:     pr.recovered,
 			MemoryLimitMi: memoryLimitMi(specs, st.Name),
 		})
 	}
 	return inputs
 }
 
-// oomRecent is how long a container that was OOMKilled and then recovered is
-// still reported, so the problem does not vanish before anyone sees it.
-const oomRecent = 10 * time.Minute
+// containerProblem is what problem found about one container.
+type containerProblem struct {
+	reason    string
+	message   string
+	exitCode  int32
+	since     time.Time // zero if Kubernetes has no time for it
+	recovered bool      // the container failed but is running again
+}
 
-// problem returns the reason, the Kubernetes message, the exit code and the
-// time Kubernetes recorded for the container's problem, or an empty reason if
-// the container is healthy. The time is zero when Kubernetes has none.
+// problem reports whether the container has a problem and describes it.
 //
-// Kubernetes keeps the last termination until the container stops again, so
-// an OOM kill stays there long after the container has recovered. It counts
-// as a problem only while the container is not ready or for oomRecent after
-// the kill.
-func problem(st corev1.ContainerStatus) (string, string, int32, time.Time) {
-	if t := st.LastTerminationState.Terminated; t != nil && t.Reason == "OOMKilled" &&
-		(!st.Ready || time.Since(t.FinishedAt.Time) < oomRecent) {
-		return t.Reason, t.Message, t.ExitCode, t.FinishedAt.Time
+// A container that does not run is a problem for as long as it does not run.
+// A container that failed and is running again is still reported, marked as
+// recovered, until recentCrash has passed since its last failure.
+//
+// While a container keeps crashing, Kubernetes switches it between a
+// terminated state and Waiting with CrashLoopBackOff. In both cases the
+// reason of the last termination (Error, OOMKilled, ...) is reported, so the
+// problem keeps the same reason instead of flapping between the two.
+func (c *Client) problem(st corev1.ContainerStatus) (containerProblem, bool) {
+	last := st.LastTerminationState.Terminated
+	failed := last != nil && last.Reason != "Completed"
+
+	switch {
+	case st.State.Waiting != nil:
+		w := st.State.Waiting
+		switch {
+		case w.Reason == "ContainerCreating":
+			return containerProblem{}, false
+		case w.Reason == "CrashLoopBackOff" && failed:
+			return terminated(last, w.Message), true
+		default:
+			return containerProblem{reason: w.Reason, message: w.Message}, true
+		}
+
+	case st.State.Terminated != nil:
+		if st.State.Terminated.Reason == "Completed" {
+			return containerProblem{}, false
+		}
+		return terminated(st.State.Terminated, ""), true
+
+	case st.State.Running != nil && failed && time.Since(last.FinishedAt.Time) < c.recentCrash:
+		pr := terminated(last, "")
+		pr.recovered = true
+		return pr, true
 	}
-	if w := st.State.Waiting; w != nil && w.Reason != "ContainerCreating" {
-		return w.Reason, w.Message, 0, time.Time{}
+
+	return containerProblem{}, false
+}
+
+// terminated describes a termination. message replaces the termination's own
+// message when the termination has none.
+func terminated(t *corev1.ContainerStateTerminated, message string) containerProblem {
+	if t.Message != "" {
+		message = t.Message
 	}
-	if t := st.State.Terminated; t != nil && t.Reason != "Completed" {
-		return t.Reason, t.Message, t.ExitCode, t.FinishedAt.Time
+	return containerProblem{
+		reason:   t.Reason,
+		message:  message,
+		exitCode: t.ExitCode,
+		since:    t.FinishedAt.Time,
 	}
-	return "", "", 0, time.Time{}
 }
 
 // memoryLimitMi returns the memory limit of the named container in MiB,

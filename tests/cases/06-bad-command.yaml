@@ -1,0 +1,11 @@
+# Command binary does not exist -> StartError / RunContainerError.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: bad-command
+  namespace: warden-test
+spec:
+  containers:
+    - name: app
+      image: busybox:1.36
+      command: ["/does/not/exist"]

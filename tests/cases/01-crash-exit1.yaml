@@ -1,0 +1,11 @@
+# Process exits with code 1 right away -> Error, then CrashLoopBackOff.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: crash-exit1
+  namespace: warden-test
+spec:
+  containers:
+    - name: app
+      image: busybox:1.36
+      command: ["sh", "-c", "echo failing; exit 1"]

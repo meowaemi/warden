@@ -1,0 +1,10 @@
+# Tag does not exist -> ErrImagePull, then ImagePullBackOff.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: image-not-found
+  namespace: warden-test
+spec:
+  containers:
+    - name: app
+      image: busybox:this-tag-does-not-exist

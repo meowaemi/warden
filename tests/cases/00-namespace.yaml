@@ -1,0 +1,6 @@
+# All warden test cases live here; remove them with:
+#   kubectl delete namespace warden-test
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: warden-test

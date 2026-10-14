@@ -17,7 +17,9 @@ import (
 )
 
 func main() {
-	cl, err := kuber.New()
+	// A container that failed and runs again stays reported as a warning
+	// for this long after its last failure.
+	cl, err := kuber.New(10 * time.Minute)
 	if err != nil {
 		logger.Log.Error("create kube client", "err", err)
 		os.Exit(1)

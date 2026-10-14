@@ -1,0 +1,15 @@
+# Uses more memory than its limit -> OOMKilled, handled by the oom-limit rule.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: oom
+  namespace: warden-test
+spec:
+  containers:
+    - name: stress
+      image: polinux/stress
+      command: ["stress"]
+      args: ["--vm", "1", "--vm-bytes", "100M", "--vm-hang", "1"]
+      resources:
+        limits:
+          memory: "50Mi"

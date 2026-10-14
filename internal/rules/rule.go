@@ -22,11 +22,13 @@ type Input struct {
 	RestartCount  int32
 	MemoryLimitMi int
 	Since         time.Time // when Kubernetes says the problem started, zero if unknown
+	Recovered     bool      // the container failed but is running again
 }
 
 // Base implements Name, Match and Report using a prepared message.
 // Rule, Reason, Severity, Title and Text are taken from the message;
-// Report fills in the parts that depend on the container.
+// Report fills in the parts that depend on the container. A container that
+// has recovered is reported as a Warning whatever the prepared severity is.
 type Base struct {
 	messages.Message
 }
@@ -52,12 +54,19 @@ func (b Base) Report(input Input) messages.Message {
 	if input.Message != "" {
 		msg.Details = append(msg.Details, messages.Detail{Key: "Kubernetes", Value: input.Message})
 	}
+	if input.Recovered {
+		msg.Severity = messages.Warning
+		msg.Details = append(msg.Details, messages.Detail{Key: "State", Value: "running again"})
+	}
 	return msg
 }
 
 // Fallback reports problems that no other rule matched, using only what
 // Kubernetes itself says about the container. It matches every input, so it
 // must be applied only after all other rules failed to match.
+//
+// The severity is Error: the container or pod does not run. A container that
+// has recovered becomes a Warning in Base.Report.
 type Fallback struct{}
 
 func (Fallback) Name() string { return "fallback" }
@@ -65,12 +74,16 @@ func (Fallback) Name() string { return "fallback" }
 func (Fallback) Match(input Input) bool { return true }
 
 func (f Fallback) Report(input Input) messages.Message {
+	text := "Kubernetes reports the container as " + input.Reason
+	if input.Recovered {
+		text = "The container failed with " + input.Reason + " and is running again"
+	}
 	b := Base{Message: messages.Message{
 		Rule:     f.Name(),
 		Reason:   input.Reason,
-		Severity: messages.Warning,
+		Severity: messages.Error,
 		Title:    input.Reason,
-		Text:     "Kubernetes reports the container as " + input.Reason,
+		Text:     text,
 	}}
 	return b.Report(input)
 }
