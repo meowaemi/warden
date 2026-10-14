@@ -77,7 +77,6 @@ type Message struct {
 	Target   Target
 	Details  []Detail
 	Logs     []string
-	Count    int
 	Time     time.Time
 }
 
