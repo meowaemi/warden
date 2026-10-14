@@ -1,6 +1,7 @@
 package store
 
 import (
+	"sort"
 	"sync"
 	"warden/internal/messages"
 )
@@ -43,4 +44,19 @@ func (s *Store) Update(found []messages.Message) (added, removed []messages.Mess
 	}
 
 	return added, removed
+}
+
+// List returns a copy of the current problems, oldest first.
+func (s *Store) List() []messages.Message {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	list := make([]messages.Message, 0, len(s.items))
+	for _, msg := range s.items {
+		list = append(list, msg)
+	}
+	sort.Slice(list, func(i, j int) bool {
+		return list[i].Time.Before(list[j].Time)
+	})
+	return list
 }
