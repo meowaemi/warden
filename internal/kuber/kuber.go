@@ -3,7 +3,6 @@ package kuber
 import (
 	"context"
 	"path/filepath"
-	"warden/internal/logger"
 	"warden/internal/rules"
 
 	corev1 "k8s.io/api/core/v1"
@@ -33,49 +32,6 @@ func New() (*Client, error) {
 	return &Client{cs: cs}, nil
 }
 
-func (c *Client) PrintPods(ctx context.Context, namespace string) error {
-
-	pods, err := c.cs.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return err
-	}
-
-	for _, p := range pods.Items {
-		logger.Log.Info(
-			"pod status",
-			"name", p.Name,
-			"phase", p.Status.Phase,
-		)
-
-		for _, st := range p.Status.ContainerStatuses {
-			logger.Log.Info(
-				"container status",
-				"name", st.Name,
-				"restarts", st.RestartCount,
-			)
-
-			if w := st.State.Waiting; w != nil {
-				logger.Log.Warn(
-					"container waiting",
-					"name", st.Name,
-					"reason", w.Reason,
-				)
-			}
-
-			if t := st.LastTerminationState.Terminated; t != nil {
-				logger.Log.Error(
-					"container terminated",
-					"name", st.Name,
-					"reason", t.Reason,
-					"exit_code", t.ExitCode,
-				)
-			}
-		}
-	}
-
-	return nil
-}
-
 func (c *Client) Inputs(ctx context.Context, namespace string) ([]rules.Input, error) {
 	pods, err := c.cs.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
@@ -85,7 +41,7 @@ func (c *Client) Inputs(ctx context.Context, namespace string) ([]rules.Input, e
 	var inputs []rules.Input
 	for _, p := range pods.Items {
 		for _, st := range p.Status.ContainerStatuses {
-			reason, exitCode := problem(st)
+			reason, message, exitCode := problem(st)
 			if reason == "" {
 				continue
 			}
@@ -94,6 +50,7 @@ func (c *Client) Inputs(ctx context.Context, namespace string) ([]rules.Input, e
 				Namespace:     p.Namespace,
 				ContainerName: st.Name,
 				Reason:        reason,
+				Message:       message,
 				ExitCode:      exitCode,
 				RestartCount:  st.RestartCount,
 				MemoryLimitMi: memoryLimitMi(p, st.Name),
@@ -103,17 +60,19 @@ func (c *Client) Inputs(ctx context.Context, namespace string) ([]rules.Input, e
 	return inputs, nil
 }
 
-func problem(st corev1.ContainerStatus) (string, int32) {
+// problem returns the reason, the Kubernetes message and the exit code of the
+// container's problem, or an empty reason if the container is healthy.
+func problem(st corev1.ContainerStatus) (string, string, int32) {
 	if t := st.LastTerminationState.Terminated; t != nil && t.Reason == "OOMKilled" {
-		return t.Reason, t.ExitCode
+		return t.Reason, t.Message, t.ExitCode
 	}
 	if w := st.State.Waiting; w != nil && w.Reason != "ContainerCreating" {
-		return w.Reason, 0
+		return w.Reason, w.Message, 0
 	}
 	if t := st.State.Terminated; t != nil && t.Reason != "Completed" {
-		return t.Reason, t.ExitCode
+		return t.Reason, t.Message, t.ExitCode
 	}
-	return "", 0
+	return "", "", 0
 }
 
 func memoryLimitMi(p corev1.Pod, container string) int {

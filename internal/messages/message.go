@@ -1,13 +1,15 @@
 package messages
 
-import "time"
+import (
+	"time"
+)
 
 type Severity int
 
 const (
 	Info Severity = iota
 	Warning
-	Critical
+	Error
 )
 
 func (s Severity) String() string {
@@ -16,8 +18,8 @@ func (s Severity) String() string {
 		return "INFO"
 	case Warning:
 		return "WARNING"
-	case Critical:
-		return "CRITICAL"
+	case Error:
+		return "ERROR"
 	default:
 		return "UNKNOWN"
 	}
