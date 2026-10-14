@@ -83,5 +83,5 @@ type Message struct {
 }
 
 func (m Message) Key() string {
-	return m.Target.String() + "/" + m.Reason
+	return m.Target.String() + "/" + m.Target.Container + "/" + m.Reason
 }
