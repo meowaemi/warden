@@ -21,7 +21,7 @@ type Input struct {
 	ExitCode      int32
 	RestartCount  int32
 	MemoryLimitMi int
-	Since         time.Time // when Kubernetes says the problem started, current if unknown
+	Since         time.Time // when Kubernetes says the problem started, zero if unknown
 }
 
 // Base implements Name, Match and Report using a prepared message.
