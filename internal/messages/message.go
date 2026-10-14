@@ -25,6 +25,9 @@ func (s Severity) String() string {
 	}
 }
 
+// MarshalText makes the severity appear as its name in JSON.
+func (s Severity) MarshalText() ([]byte, error) { return []byte(s.String()), nil }
+
 type Outcome int
 
 const (
@@ -49,13 +52,16 @@ func (o Outcome) String() string {
 	}
 }
 
+// MarshalText makes the outcome appear as its name in JSON.
+func (o Outcome) MarshalText() ([]byte, error) { return []byte(o.String()), nil }
+
 type Target struct {
-	Namespace string
-	Pod       string
-	Container string
-	Node      string
-	OwnerKind string
-	OwnerName string
+	Namespace string `json:"namespace"`
+	Pod       string `json:"pod"`
+	Container string `json:"container"`
+	Node      string `json:"node,omitempty"`
+	OwnerKind string `json:"ownerKind,omitempty"`
+	OwnerName string `json:"ownerName,omitempty"`
 }
 
 func (t Target) String() string {
@@ -63,21 +69,21 @@ func (t Target) String() string {
 }
 
 type Detail struct {
-	Key   string
-	Value string
+	Key   string `json:"key"`
+	Value string `json:"value"`
 }
 
 type Message struct {
-	Severity Severity
-	Outcome  Outcome
-	Reason   string
-	Rule     string
-	Title    string
-	Text     string
-	Target   Target
-	Details  []Detail
-	Logs     []string
-	Time     time.Time
+	Severity Severity  `json:"severity"`
+	Outcome  Outcome   `json:"outcome"`
+	Reason   string    `json:"reason"`
+	Rule     string    `json:"rule"`
+	Title    string    `json:"title"`
+	Text     string    `json:"text"`
+	Target   Target    `json:"target"`
+	Details  []Detail  `json:"details"`
+	Logs     []string  `json:"logs,omitempty"`
+	Time     time.Time `json:"time"`
 }
 
 func (m Message) Key() string {
