@@ -2,6 +2,7 @@ package rules
 
 import (
 	"strconv"
+	"time"
 	"warden/internal/messages"
 )
 
@@ -20,10 +21,11 @@ type Input struct {
 	ExitCode      int32
 	RestartCount  int32
 	MemoryLimitMi int
+	Since         time.Time // when Kubernetes says the problem started, zero if unknown
 }
 
 // Base implements Name, Match and Report using a prepared message.
-// Rule, Reason, Severity, Title, Text and Hint are taken from the message;
+// Rule, Reason, Severity, Title and Text are taken from the message;
 // Report fills in the parts that depend on the container.
 type Base struct {
 	messages.Message
@@ -38,6 +40,7 @@ func (b Base) Match(input Input) bool {
 func (b Base) Report(input Input) messages.Message {
 	msg := b.Message
 	msg.Outcome = messages.Reported
+	msg.Time = input.Since.UTC()
 	msg.Target = messages.Target{
 		Namespace: input.Namespace,
 		Pod:       input.PodName,

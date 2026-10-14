@@ -74,7 +74,6 @@ type Message struct {
 	Rule     string
 	Title    string
 	Text     string
-	Hint     string
 	Target   Target
 	Details  []Detail
 	Logs     []string

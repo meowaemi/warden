@@ -18,14 +18,14 @@ import (
 
 // Run calls Check immediately and then once per interval until ctx is
 // canceled. It blocks for the whole time warden is running.
-func Run(ctx context.Context, cl *kuber.Client, ruleset []rules.Rule, interval time.Duration) {
-	logger.Log.Info("warden started", "interval", interval, "rules", len(ruleset))
+func Run(ctx context.Context, cl *kuber.Client, namespace string, ruleset []rules.Rule, interval time.Duration) {
+	logger.Log.Info("warden started", "namespace", namespace, "interval", interval, "rules", len(ruleset))
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	for {
-		Check(ctx, cl, ruleset)
+		Check(ctx, cl, namespace, ruleset)
 
 		select {
 		case <-ctx.Done():
@@ -36,13 +36,13 @@ func Run(ctx context.Context, cl *kuber.Client, ruleset []rules.Rule, interval t
 	}
 }
 
-// Check performs a single pass: it lists problematic containers in the
-// "default" namespace, matches each of them against ruleset and prints a
-// message for every match. A container no rule matched is reported by
+// Check performs a single pass: it lists problems in namespace (all
+// namespaces if empty), matches each of them against ruleset and prints a
+// message for every match. A problem no rule matched is reported by
 // rules.Fallback, so no problem goes unnoticed. Errors are logged and do not
 // stop warden; the next pass will try again.
-func Check(ctx context.Context, cl *kuber.Client, ruleset []rules.Rule) {
-	inputs, err := cl.Inputs(ctx, "default")
+func Check(ctx context.Context, cl *kuber.Client, namespace string, ruleset []rules.Rule) {
+	inputs, err := cl.Inputs(ctx, namespace)
 	if err != nil {
 		logger.Log.Error("list problems", "err", err)
 		return
@@ -68,10 +68,13 @@ func Check(ctx context.Context, cl *kuber.Client, ruleset []rules.Rule) {
 	}
 }
 
-// report builds the rule's message for the input and outputs it.
+// report builds the rule's message for the input and outputs it. If
+// Kubernetes gave no time for the problem, the current time is used.
 func report(r rules.Rule, in rules.Input) {
 	msg := r.Report(in)
-	msg.Time = time.Now().UTC()
+	if msg.Time.IsZero() {
+		msg.Time = time.Now().UTC()
+	}
 	printMessage(msg)
 }
 
@@ -82,8 +85,5 @@ func printMessage(m messages.Message) {
 	fmt.Printf("    %s\n", m.Text)
 	for _, d := range m.Details {
 		fmt.Printf("    %s: %s\n", d.Key, d.Value)
-	}
-	if m.Hint != "" {
-		fmt.Printf("    hint: %s\n", m.Hint)
 	}
 }

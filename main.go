@@ -9,6 +9,8 @@ import (
 	"warden/internal/kuber"
 	"warden/internal/logger"
 	"warden/internal/rules"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func main() {
@@ -25,5 +27,5 @@ func main() {
 		rules.NewOOMLimit(25, 512),
 	}
 
-	core.Run(ctx, cl, ruleset, 10*time.Second)
+	core.Run(ctx, cl, metav1.NamespaceAll, ruleset, 10*time.Second)
 }

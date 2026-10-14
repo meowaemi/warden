@@ -40,7 +40,6 @@ func NewOOMLimit(stepPercent, maxMi int) OOMLimit {
 			Severity: messages.Error,
 			Title:    "Container killed: out of memory",
 			Text:     "The container exceeded its memory limit and was killed",
-			Hint:     "Increase the memory limit or reduce the application's memory usage",
 		}},
 		StepPercent: stepPercent,
 		MaxMi:       maxMi,
@@ -63,7 +62,6 @@ func (r OOMLimit) Fix(input Input) (Result, error) {
 
 func (r OOMLimit) ReportFix(result Result) messages.Message {
 	msg := r.Report(result.Input)
-	msg.Hint = ""
 
 	if result.Success {
 		msg.Severity = messages.Warning
@@ -75,7 +73,6 @@ func (r OOMLimit) ReportFix(result Result) messages.Message {
 		msg.Outcome = messages.FixFailed
 		msg.Title = "Pod terminated: OOMKilled"
 		msg.Text = "Failed to increase the pod memory limit"
-		msg.Hint = "Check cluster capacity, resource quotas, or your service permissions"
 	}
 
 	if result.Note != "" {
