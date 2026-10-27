@@ -1,6 +1,7 @@
 package messages
 
 import (
+	"fmt"
 	"time"
 )
 
@@ -24,8 +25,6 @@ func (s Severity) String() string {
 		return "UNKNOWN"
 	}
 }
-
-// MarshalText makes the severity appear as its name in JSON.
 func (s Severity) MarshalText() ([]byte, error) { return []byte(s.String()), nil }
 
 type Outcome int
@@ -51,8 +50,6 @@ func (o Outcome) String() string {
 		return "UNKNOWN"
 	}
 }
-
-// MarshalText makes the outcome appear as its name in JSON.
 func (o Outcome) MarshalText() ([]byte, error) { return []byte(o.String()), nil }
 
 type Target struct {
@@ -88,4 +85,32 @@ type Message struct {
 
 func (m Message) Key() string {
 	return m.Target.String() + "/" + m.Target.Container + "/" + m.Reason
+}
+func (s *Severity) UnmarshalText(text []byte) error {
+	switch string(text) {
+	case "INFO":
+		*s = Info
+	case "WARNING":
+		*s = Warning
+	case "ERROR":
+		*s = Error
+	default:
+		return fmt.Errorf("unknown severity %q", text)
+	}
+	return nil
+}
+func (o *Outcome) UnmarshalText(text []byte) error {
+	switch string(text) {
+	case "REPORTED":
+		*o = Reported
+	case "FIXED":
+		*o = Fixed
+	case "WOULD_FIX":
+		*o = WouldFix
+	case "FIX_FAILED":
+		*o = FixFailed
+	default:
+		return fmt.Errorf("unknown outcome %q", text)
+	}
+	return nil
 }

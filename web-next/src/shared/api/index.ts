@@ -1,0 +1,59 @@
+import { createApi } from '@reduxjs/toolkit/query/react';
+import { authenticatedQuery } from './base-query';
+import type { Command, CreateCommand, DemoLink, Observation, Site } from './types';
+export const api = createApi({
+  reducerPath: 'wardenAPI',
+  baseQuery: authenticatedQuery,
+  tagTypes: ['Sites', 'Commands', 'History', 'Demo'],
+  endpoints: (builder) => ({
+    getSites: builder.query<Site[], number>({
+      query: (sessionKey) => ({ path: '/api/sites', sessionKey }),
+      providesTags: ['Sites'],
+    }),
+    getCommands: builder.query<Command[], { siteID: string; sessionKey: number }>({
+      query: ({ siteID, sessionKey }) => ({
+        path: `/api/commands?site_id=${encodeURIComponent(siteID)}`,
+        sessionKey,
+      }),
+      providesTags: ['Commands'],
+    }),
+    getHistory: builder.query<Observation[], { siteID: string; sessionKey: number }>({
+      query: ({ siteID, sessionKey }) => ({
+        path: `/api/history?site_id=${encodeURIComponent(siteID)}`,
+        sessionKey,
+      }),
+      providesTags: ['History'],
+    }),
+    getDemo: builder.query<DemoLink, number>({
+      query: (sessionKey) => ({ path: '/api/demo/link', sessionKey }),
+      providesTags: ['Demo'],
+    }),
+    createCommand: builder.mutation<Command, { command: CreateCommand; sessionKey: number }>({
+      query: ({ command, sessionKey }) => ({
+        path: '/api/commands',
+        method: 'POST',
+        body: command,
+        sessionKey,
+      }),
+      invalidatesTags: ['Commands'],
+    }),
+    setDemo: builder.mutation<DemoLink, { connected: boolean; sessionKey: number }>({
+      query: ({ connected, sessionKey }) => ({
+        path: '/api/demo/link',
+        method: 'POST',
+        body: { connected },
+        sessionKey,
+      }),
+      invalidatesTags: ['Sites', 'Demo'],
+    }),
+  }),
+});
+export const {
+  useGetSitesQuery,
+  useGetCommandsQuery,
+  useGetHistoryQuery,
+  useGetDemoQuery,
+  useCreateCommandMutation,
+  useSetDemoMutation,
+} = api;
+export type * from './types';

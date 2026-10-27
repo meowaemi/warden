@@ -16,13 +16,10 @@ import (
 )
 
 type Client struct {
-	cs          *kubernetes.Clientset
+	cs          kubernetes.Interface
 	recentCrash time.Duration
 }
 
-// New creates a client from ~/.kube/config. It does not contact the cluster.
-// A container that failed and is running again is still reported for
-// recentCrash after its last failure.
 func New(recentCrash time.Duration) (*Client, error) {
 	path := filepath.Join(homedir.HomeDir(), ".kube", "config")
 
@@ -40,9 +37,6 @@ func New(recentCrash time.Duration) (*Client, error) {
 	logger.Log.Info("kube client created", "kubeconfig", path, "host", cfg.Host)
 	return &Client{cs: cs, recentCrash: recentCrash}, nil
 }
-
-// Ping checks that the cluster answers by asking the API server for its
-// version, and returns that version.
 func (c *Client) Ping(ctx context.Context) (string, error) {
 	v, err := c.cs.Discovery().ServerVersion()
 	if err != nil {
@@ -50,10 +44,6 @@ func (c *Client) Ping(ctx context.Context) (string, error) {
 	}
 	return v.GitVersion, nil
 }
-
-// Inputs lists pods in namespace and returns one input per problem found:
-// a pod that cannot be scheduled, or a problematic init or regular container.
-// An empty namespace (metav1.NamespaceAll) means all namespaces.
 func (c *Client) Inputs(ctx context.Context, namespace string) ([]rules.Input, error) {
 	start := time.Now()
 	pods, err := c.cs.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
@@ -72,17 +62,12 @@ func (c *Client) Inputs(ctx context.Context, namespace string) ([]rules.Input, e
 	}
 	return inputs, nil
 }
-
-// NamespaceLabel returns namespace for logging, with "all" for the empty one.
 func NamespaceLabel(namespace string) string {
 	if namespace == metav1.NamespaceAll {
 		return "all"
 	}
 	return namespace
 }
-
-// unschedulable reports a pod the scheduler cannot place on any node.
-// Such a pod has no container statuses yet, so it is checked separately.
 func unschedulable(p corev1.Pod) (rules.Input, bool) {
 	for _, cond := range p.Status.Conditions {
 		if cond.Type == corev1.PodScheduled &&
@@ -99,9 +84,6 @@ func unschedulable(p corev1.Pod) (rules.Input, bool) {
 	}
 	return rules.Input{}, false
 }
-
-// appendContainers adds an input for every problematic container in statuses.
-// specs are the matching container definitions, used to read memory limits.
 func (c *Client) appendContainers(inputs []rules.Input, p corev1.Pod, statuses []corev1.ContainerStatus, specs []corev1.Container) []rules.Input {
 	for _, st := range statuses {
 		pr, ok := c.problem(st)
@@ -124,7 +106,6 @@ func (c *Client) appendContainers(inputs []rules.Input, p corev1.Pod, statuses [
 	return inputs
 }
 
-// containerProblem is what problem found about one container.
 type containerProblem struct {
 	reason    string
 	message   string
@@ -133,16 +114,6 @@ type containerProblem struct {
 	recovered bool      // the container failed but is running again
 }
 
-// problem reports whether the container has a problem and describes it.
-//
-// A container that does not run is a problem for as long as it does not run.
-// A container that failed and is running again is still reported, marked as
-// recovered, until recentCrash has passed since its last failure.
-//
-// While a container keeps crashing, Kubernetes switches it between a
-// terminated state and Waiting with CrashLoopBackOff. In both cases the
-// reason of the last termination (Error, OOMKilled, ...) is reported, so the
-// problem keeps the same reason instead of flapping between the two.
 func (c *Client) problem(st corev1.ContainerStatus) (containerProblem, bool) {
 	last := st.LastTerminationState.Terminated
 	failed := last != nil && last.Reason != "Completed"
@@ -173,9 +144,6 @@ func (c *Client) problem(st corev1.ContainerStatus) (containerProblem, bool) {
 
 	return containerProblem{}, false
 }
-
-// terminated describes a termination. message replaces the termination's own
-// message when the termination has none.
 func terminated(t *corev1.ContainerStateTerminated, message string) containerProblem {
 	if t.Message != "" {
 		message = t.Message
@@ -187,9 +155,6 @@ func terminated(t *corev1.ContainerStateTerminated, message string) containerPro
 		since:    t.FinishedAt.Time,
 	}
 }
-
-// memoryLimitMi returns the memory limit of the named container in MiB,
-// or 0 if it has none.
 func memoryLimitMi(specs []corev1.Container, container string) int {
 	for _, c := range specs {
 		if c.Name != container {
