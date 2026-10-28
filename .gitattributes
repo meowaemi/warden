@@ -1,0 +1,4 @@
+# GitHub's language bar counts only the Go backend. The frontend stays in the
+# repository and its diffs are shown as usual; it is just left out of the
+# language statistics.
+web-next/** linguist-vendored
