@@ -2,6 +2,7 @@
 import { Server, ChevronRight } from 'lucide-react';
 import type { Site } from '@/shared/api/types';
 import { useI18n } from '@/shared/i18n';
+import { neverObserved } from '@/shared/lib/observed';
 export function SitesOverview({
   sites,
   selectedID,
@@ -34,8 +35,7 @@ export function SitesOverview({
       ) : (
         <div className="stack">
           {sites.map((site) => {
-            const unknown =
-              unavailable || !site.last_success || site.last_success.startsWith('0001-');
+            const unknown = unavailable || neverObserved(site.last_success);
             const label = unknown
               ? 'monitor.unknown'
               : site.stale

@@ -31,6 +31,7 @@ import { ObservationHistory } from '@/widgets/observation-history';
 import { CommandsList } from '@/widgets/commands-list';
 import { QueueRestart } from '@/features/queue-restart';
 import { DemoControls } from '@/features/toggle-demo-link';
+import { neverObserved } from '@/shared/lib/observed';
 
 export function Dashboard() {
   const { t, locale, setLocale, theme, setTheme, timeZone } = useI18n();
@@ -38,7 +39,9 @@ export function Dashboard() {
   const [settings, setSettings] = useState(false);
   const [selected, setSelected] = useState('');
   const sitesQuery = useGetSitesQuery(sessionKey, { skip: !connected, pollingInterval: 5000 });
-  const demo = useGetDemoQuery(sessionKey, { skip: !connected, pollingInterval: 5000 });
+  // Whether the center is a demo does not change while it runs, so this is
+  // asked once per session; the demo toggle refreshes it itself.
+  const demo = useGetDemoQuery(sessionKey, { skip: !connected });
   const sites = connected ? (sitesQuery.currentData ?? []) : [];
   const selectedID = sites.some((s) => s.id === selected) ? selected : (sites[0]?.id ?? '');
   const site = sites.find((s) => s.id === selectedID);
@@ -54,7 +57,7 @@ export function Dashboard() {
         : 'shell.connecting';
   const problemCount = sites.reduce((n, s) => n + s.messages.length, 0);
   const staleCount = sites.filter(
-    (s) => unavailable || s.stale || !s.last_success || s.last_success.startsWith('0001-'),
+    (s) => unavailable || s.stale || neverObserved(s.last_success),
   ).length;
   function login(event: React.FormEvent) {
     event.preventDefault();

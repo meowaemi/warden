@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { Search, CircleAlert } from 'lucide-react';
 import type { Problem, Site, Severity } from '@/shared/api/types';
 import { useI18n } from '@/shared/i18n';
+import { neverObserved } from '@/shared/lib/observed';
 const reasonKeys = {
   OOMKilled: 'monitor.reason.OOMKilled',
   CrashLoopBackOff: 'monitor.reason.CrashLoopBackOff',
@@ -50,8 +51,7 @@ export function ProblemsList({ site, unavailable }: { site: Site; unavailable: b
         .toLocaleLowerCase()
         .includes(search.toLocaleLowerCase()),
   );
-  const unknown =
-    unavailable || site.stale || !site.last_success || site.last_success.startsWith('0001-');
+  const unknown = unavailable || site.stale || neverObserved(site.last_success);
   return (
     <section className="panel">
       <div className="panel-header">
