@@ -1,11 +1,5 @@
-// Package core contains the main work loop of warden: it periodically asks
-// the cluster for problematic containers, runs them through the rules and
-// keeps the resulting messages in a store.
-//
-// Messages are meant for warden users: a message is printed once, when its
-// problem first appears. The operational log written through the logger
-// package is for the developer: it records startup, failed checks and
-// problems appearing or being resolved, not every check.
+// Package core runs the rules over the cluster: once per snapshot for an
+// agent, or in a loop with an in-memory store for the local mode.
 package core
 
 import (
@@ -20,8 +14,7 @@ import (
 	"warden/internal/store"
 )
 
-// Run calls Check immediately and then once per interval until ctx is
-// canceled. It blocks for the whole time warden is running.
+// Run calls Check every interval until ctx is canceled.
 func Run(ctx context.Context, cl *kuber.Client, namespace string, ruleset []rules.Rule, st *store.Store, interval time.Duration) {
 	names := make([]string, 0, len(ruleset))
 	for _, r := range ruleset {
@@ -48,13 +41,8 @@ func Run(ctx context.Context, cl *kuber.Client, namespace string, ruleset []rule
 	}
 }
 
-// Check performs a single pass: it lists problems in namespace (all
-// namespaces if empty), matches each of them against ruleset and updates st
-// with the resulting messages. A problem no rule matched is reported by
-// rules.Fallback, so no problem goes unnoticed.
-//
-// Only problems that are new since the previous pass are printed. Errors are
-// logged and leave st untouched; the next pass will try again.
+// Check runs the rules once, updates st and prints the problems that are
+// new since the previous check. Errors are logged and leave st unchanged.
 func Check(ctx context.Context, cl *kuber.Client, namespace string, ruleset []rules.Rule, st *store.Store) {
 	inputs, err := cl.Inputs(ctx, namespace)
 	if err != nil {
@@ -87,8 +75,7 @@ func Check(ctx context.Context, cl *kuber.Client, namespace string, ruleset []ru
 	}
 }
 
-// report builds the rule's message for the input. If Kubernetes gave no
-// time for the problem, the current time is used.
+// report builds the rule's message; with no time from Kubernetes it uses now.
 func report(r rules.Rule, in rules.Input) messages.Message {
 	msg := r.Report(in)
 	if msg.Time.IsZero() {
@@ -97,7 +84,7 @@ func report(r rules.Rule, in rules.Input) messages.Message {
 	return msg
 }
 
-// printMessage writes a user-facing message to stdout in a readable form.
+// printMessage prints a message for the user.
 func printMessage(m messages.Message) {
 	target := m.Target.String()
 	if m.Target.Container != "" {

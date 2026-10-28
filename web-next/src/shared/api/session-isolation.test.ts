@@ -4,6 +4,7 @@ import { api } from './index';
 import { makeStore } from '@/shared/lib/store';
 import { installCredential, sessionKey } from '@/shared/lib/credential';
 
+// The token must reach only the Authorization header and never outlive its session.
 afterEach(() => {
   installCredential('');
   vi.unstubAllGlobals();

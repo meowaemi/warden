@@ -1,4 +1,4 @@
-# Init container fails -> Init:Error / Init:CrashLoopBackOff, main never starts.
+# Init container fails -> Error / CrashLoopBackOff; the main one never starts.
 apiVersion: v1
 kind: Pod
 metadata:

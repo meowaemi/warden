@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueueRestart } from './index';
 import { prepareCommand, definitiveRejection } from './model';
+/** state holds the mocked send and language; t returns the language and the key. */
 const state = vi.hoisted(() => ({ language: 'ru', send: vi.fn() }));
 vi.mock('../../shared/api', () => ({
   useCreateCommandMutation: () => [state.send, { isLoading: false }],

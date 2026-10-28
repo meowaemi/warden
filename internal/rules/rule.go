@@ -1,3 +1,4 @@
+// Package rules turns problems found in the cluster into user messages.
 package rules
 
 import (
@@ -6,43 +7,50 @@ import (
 	"warden/internal/messages"
 )
 
+// Rule recognizes a kind of problem and describes it to the user.
 type Rule interface {
+	// Name identifies the rule in messages and logs.
 	Name() string
+	// Match reports whether the rule knows this problem.
 	Match(input Input) bool
+	// Report describes a matched problem to the user.
 	Report(input Input) messages.Message
 }
 
-// Input describes one problem. For a node (server) problem PodName is empty
-// and NodeName is set; for a pod problem NodeName is the node it runs on, or
-// empty if it is not scheduled yet.
+// Input is one problem found in the cluster. A node problem has no pod.
+// Owner fields name the workload that runs the pod: a fix changes it, since
+// a change of the pod itself is lost when the pod is recreated.
 type Input struct {
 	NodeName      string
 	PodName       string
+	OwnerKind     string
+	OwnerName     string
+	OwnerUID      string
 	Namespace     string
 	ContainerName string
 	Reason        string
-	Message       string // text Kubernetes gives together with Reason, may be empty
+	Message       string // Kubernetes text for Reason, may be empty
 	ExitCode      int32
 	RestartCount  int32
 	MemoryLimitMi int
-	Since         time.Time // when Kubernetes says the problem started, zero if unknown
-	Recovered     bool      // the container failed but is running again
+	Since         time.Time // when the problem started, zero if unknown
+	Recovered     bool      // the container crashed but runs again
 }
 
-// Base implements Name, Match and Report using a prepared message.
-// Rule, Reason, Severity, Title and Text are taken from the message;
-// Report fills in the parts that depend on the container. A container that
-// has recovered is reported as a Warning whatever the prepared severity is.
+// Base is a rule built from a prepared message; it matches by Reason.
 type Base struct {
 	messages.Message
 }
 
+// Name returns the rule name of the prepared message.
 func (b Base) Name() string { return b.Rule }
 
+// Match reports whether input has the prepared message's Reason.
 func (b Base) Match(input Input) bool {
 	return input.Reason == b.Reason
 }
 
+// Report fills the message for input. A recovered container is only a warning.
 func (b Base) Report(input Input) messages.Message {
 	msg := b.Message
 	msg.Outcome = messages.Reported
@@ -52,6 +60,9 @@ func (b Base) Report(input Input) messages.Message {
 		Pod:       input.PodName,
 		Container: input.ContainerName,
 		Node:      input.NodeName,
+		OwnerKind: input.OwnerKind,
+		OwnerName: input.OwnerName,
+		OwnerUID:  input.OwnerUID,
 	}
 	msg.Details = nil
 	if input.PodName != "" {
@@ -67,18 +78,17 @@ func (b Base) Report(input Input) messages.Message {
 	return msg
 }
 
-// Fallback reports problems that no other rule matched, using only what
-// Kubernetes itself says about the container. It matches every input, so it
-// must be applied only after all other rules failed to match.
-//
-// The severity is Error: the container or pod does not run. A container that
-// has recovered becomes a Warning in Base.Report.
+// Fallback reports a problem no other rule matched, so none goes unnoticed.
+// It matches everything and must be tried last.
 type Fallback struct{}
 
+// Name returns "fallback".
 func (Fallback) Name() string { return "fallback" }
 
+// Match matches every input.
 func (Fallback) Match(input Input) bool { return true }
 
+// Report uses the Kubernetes reason as the title, with Error severity.
 func (f Fallback) Report(input Input) messages.Message {
 	text := "Kubernetes reports the container as " + input.Reason
 	if input.Recovered {

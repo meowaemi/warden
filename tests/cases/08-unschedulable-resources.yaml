@@ -1,4 +1,4 @@
-# Requests more memory than any node has -> Pending, Unschedulable.
+# Requests more memory than any node has -> Unschedulable.
 apiVersion: v1
 kind: Pod
 metadata:

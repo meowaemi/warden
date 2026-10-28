@@ -1,5 +1,8 @@
-import type { APIError, CreateCommand } from '../../shared/api/types';
+import type { CreateCommand } from '../../shared/api/types';
+/** Target is the restart form state; ttl is in minutes. */
 export type Target = { siteID: string; namespace: string; name: string; uid: string; ttl: number };
+
+/** prepareCommand builds a restart command, or null if the form is incomplete. */
 export function prepareCommand(
   target: Target,
   now = Date.now(),
@@ -25,6 +28,5 @@ export function prepareCommand(
     expires_at: new Date(now + target.ttl * 60000).toISOString(),
   });
 }
-export function definitiveRejection(error: unknown): boolean {
-  return [400, 401, 403, 404, 409, 422].includes((error as APIError)?.status as number);
-}
+// Re-exported, so the component takes everything from its model.
+export { definitiveRejection } from '../../shared/api/errors';

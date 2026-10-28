@@ -4,6 +4,7 @@ import { Search, CircleAlert } from 'lucide-react';
 import type { Problem, Site, Severity } from '@/shared/api/types';
 import { useI18n } from '@/shared/i18n';
 import { neverObserved } from '@/shared/lib/observed';
+/** reasonKeys maps known Kubernetes reasons to translations; others are shown as is. */
 const reasonKeys = {
   OOMKilled: 'monitor.reason.OOMKilled',
   CrashLoopBackOff: 'monitor.reason.CrashLoopBackOff',
@@ -19,9 +20,20 @@ const reasonKeys = {
   PIDPressure: 'monitor.reason.PIDPressure',
   NodeCordoned: 'monitor.reason.NodeCordoned',
 } as const;
-// A problem of the server itself has a node and no pod.
+
+/** isNode reports whether a problem is of the server itself. */
 const isNode = (p: Problem) => !p.target.pod && !!p.target.node;
-export function ProblemsList({ site, unavailable }: { site: Site; unavailable: boolean }) {
+
+/** ProblemsList shows and filters a site's problems; onFix is offered for pods run by a workload. */
+export function ProblemsList({
+  site,
+  unavailable,
+  onFix,
+}: {
+  site: Site;
+  unavailable: boolean;
+  onFix?: (problem: Problem) => void;
+}) {
   const { t, date } = useI18n();
   const [search, setSearch] = useState('');
   const [severity, setSeverity] = useState<Severity | ''>('');
@@ -34,6 +46,7 @@ export function ProblemsList({ site, unavailable }: { site: Site; unavailable: b
         .sort(),
     [problems],
   );
+  // A problem is shown when it matches the severity, the namespace and the search text.
   const filtered = problems.filter(
     (p) =>
       (!severity || p.severity === severity) &&
@@ -51,6 +64,7 @@ export function ProblemsList({ site, unavailable }: { site: Site; unavailable: b
         .toLocaleLowerCase()
         .includes(search.toLocaleLowerCase()),
   );
+  // Without fresh data, "no problems" cannot be claimed.
   const unknown = unavailable || site.stale || neverObserved(site.last_success);
   return (
     <section className="panel">
@@ -88,6 +102,7 @@ export function ProblemsList({ site, unavailable }: { site: Site; unavailable: b
             onChange={(e) => setNamespace(e.target.value)}
           >
             <option value="">{t('monitor.all')}</option>
+            {/* The chosen namespace stays selectable after its problems are gone. */}
             {namespace && !namespaces.includes(namespace) && (
               <option value={namespace}>{namespace}</option>
             )}
@@ -139,6 +154,11 @@ export function ProblemsList({ site, unavailable }: { site: Site; unavailable: b
                 <p className="muted">
                   {t('monitor.observed')}: {date(p.time)}
                 </p>
+                {onFix && p.target.pod && p.target.ownerUID && (
+                  <button className="button button-ghost" type="button" onClick={() => onFix(p)}>
+                    {t('commands.fix')} · {p.target.ownerKind} {p.target.ownerName}
+                  </button>
+                )}
                 <details className="technical">
                   <summary>{t('monitor.raw')}</summary>
                   <dl>

@@ -7,6 +7,10 @@ import { useSession } from '../../shared/lib/session';
 import { useI18n } from '../../shared/i18n';
 import { prepareCommand, definitiveRejection } from './model';
 
+/**
+ * QueueRestart queues a Deployment restart after explicit confirmation.
+ * If the outcome of a send is unknown, the same request is kept for retry.
+ */
 export function QueueRestart({ siteID, simulated }: { siteID: string; simulated: boolean }) {
   const { t, date } = useI18n();
   const { sessionKey, connected } = useSession();
@@ -15,12 +19,15 @@ export function QueueRestart({ siteID, simulated }: { siteID: string; simulated:
   const [name, setName] = useState('');
   const [uid, setUID] = useState('');
   const [ttl, setTTL] = useState(10);
+  // review is the command in the confirmation dialog; pending is the one sent
+  // whose outcome is not known yet.
   const [review, setReview] = useState<CreateCommand | null>(null);
   const [pending, setPending] = useState<CreateCommand | null>(null);
   const [notice, setNotice] = useState<
     'validation' | 'error' | 'rejected' | 'conflict' | 'accepted' | null
   >(null);
   const [rawError, setRawError] = useState('');
+  // prepare checks the form and opens the confirmation dialog.
   function prepare() {
     const command = prepareCommand({ siteID, namespace, name, uid, ttl });
     if (!command) {
@@ -30,6 +37,8 @@ export function QueueRestart({ siteID, simulated }: { siteID: string; simulated:
     setNotice(null);
     setReview(command);
   }
+  // submit sends command. A definitive rejection drops it; any other failure
+  // keeps it, so a retry sends the same ID.
   async function submit(command: CreateCommand) {
     setPending(command);
     setNotice(null);
@@ -48,6 +57,7 @@ export function QueueRestart({ siteID, simulated }: { siteID: string; simulated:
       } else setNotice('error');
     }
   }
+  // The form is locked while a request is in flight or its outcome is unknown.
   const locked = !!pending || isLoading;
   return (
     <section className="panel stack" aria-labelledby="restart-title">

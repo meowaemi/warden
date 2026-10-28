@@ -1,3 +1,4 @@
+// Package store keeps the current problems of the local mode in memory.
 package store
 
 import (
@@ -6,19 +7,19 @@ import (
 	"warden/internal/messages"
 )
 
+// Store is a concurrency-safe set of problems keyed by Message.Key.
 type Store struct {
 	mu    sync.Mutex
 	items map[string]messages.Message
 }
 
+// New returns an empty store.
 func New() *Store {
 	return &Store{items: make(map[string]messages.Message)}
 }
 
-// Update replaces the stored problems with found, the messages of one check.
-// A known problem keeps its first-seen Time, everything else is refreshed.
-// Problems absent from found are deleted.
-// It returns the problems that appeared and the ones that disappeared.
+// Update replaces the problems with found and returns those that appeared
+// and disappeared. A known problem keeps its first-seen time.
 func (s *Store) Update(found []messages.Message) (added, removed []messages.Message) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -46,7 +47,7 @@ func (s *Store) Update(found []messages.Message) (added, removed []messages.Mess
 	return added, removed
 }
 
-// List returns a copy of the current problems, oldest first.
+// List returns the problems, oldest first.
 func (s *Store) List() []messages.Message {
 	s.mu.Lock()
 	defer s.mu.Unlock()

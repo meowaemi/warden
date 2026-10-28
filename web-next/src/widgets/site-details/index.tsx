@@ -3,6 +3,7 @@ import { Activity, AlertTriangle } from 'lucide-react';
 import type { Site } from '@/shared/api/types';
 import { useI18n } from '@/shared/i18n';
 import { neverObserved } from '@/shared/lib/observed';
+/** SiteDetails shows when the site was last heard from and last collected. */
 export function SiteDetails({ site, unavailable }: { site: Site; unavailable: boolean }) {
   const { t, date, relative, timeZone } = useI18n();
   const never = neverObserved(site.last_success);

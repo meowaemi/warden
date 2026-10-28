@@ -1,4 +1,4 @@
-# Tag does not exist -> ErrImagePull, then ImagePullBackOff.
+# Missing image tag -> ErrImagePull, then ImagePullBackOff.
 apiVersion: v1
 kind: Pod
 metadata:

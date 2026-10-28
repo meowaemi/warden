@@ -1,4 +1,4 @@
-# Image reference is not valid at all -> InvalidImageName.
+# Malformed image reference -> InvalidImageName.
 apiVersion: v1
 kind: Pod
 metadata:

@@ -1,3 +1,4 @@
+/** commandsRu holds the texts of commands and the demo controls. */
 export const commandsRu = {
   'commands.id': 'Идентификатор',
   'commands.title': 'Отложенное управление',
@@ -55,7 +56,34 @@ export const commandsRu = {
   'commands.reconnect': 'Восстановить связь',
   'commands.demoError': 'Не удалось изменить учебное соединение.',
   'commands.updating': 'Обновляем…',
+  'commands.kind': 'Вид изменения',
+  'commands.kind.restart_deployment': 'Перезапуск',
+  'commands.kind.set_resources': 'Ресурсы контейнера',
+  'commands.kind.scale': 'Число реплик',
+  'commands.adjustTitle': 'Исправление рабочей нагрузки',
+  'commands.adjustDescription':
+    'Изменение ресурсов контейнера или числа реплик Deployment, StatefulSet или DaemonSet. Агент площадки выполнит его после подключения, если срок не истёк.',
+  'commands.targetKind': 'Тип объекта',
+  'commands.workloadName': 'Имя объекта',
+  'commands.workloadUID': 'UID объекта',
+  'commands.container': 'Контейнер',
+  'commands.cpuRequest': 'CPU, запрос',
+  'commands.cpuLimit': 'CPU, лимит',
+  'commands.memoryRequest': 'Память, запрос',
+  'commands.memoryLimit': 'Память, лимит',
+  'commands.memorySlider': 'Лимит памяти',
+  'commands.resourcesHint':
+    'Формат Kubernetes: 500m или 1 для CPU, 256Mi или 1Gi для памяти. Пустое поле остаётся без изменений.',
+  'commands.replicas': 'Реплик',
+  'commands.adjust': 'Подготовить изменение',
+  'commands.adjustConfirmTitle': 'Подтвердите изменение',
+  'commands.adjustConfirmDescription':
+    'Задание изменит спецификацию выбранного объекта, и Kubernetes пересоздаст его поды. Проверьте площадку и точную цель.',
+  'commands.adjustValidation':
+    'Заполните цель. Для ресурсов укажите контейнер и хотя бы одно значение в формате Kubernetes; реплик — от 0 до 1000; срок — от 1 до 1440 минут.',
+  'commands.fix': 'Исправить',
 } as const;
+/** commandsEn is the English version of commandsRu. */
 export const commandsEn: Record<keyof typeof commandsRu, string> = {
   'commands.id': 'Request ID',
   'commands.title': 'Deferred control',
@@ -112,4 +140,30 @@ export const commandsEn: Record<keyof typeof commandsRu, string> = {
   'commands.reconnect': 'Reconnect site',
   'commands.demoError': 'Could not change simulated connection.',
   'commands.updating': 'Updating…',
+  'commands.kind': 'Change',
+  'commands.kind.restart_deployment': 'Restart',
+  'commands.kind.set_resources': 'Container resources',
+  'commands.kind.scale': 'Replicas',
+  'commands.adjustTitle': 'Fix a workload',
+  'commands.adjustDescription':
+    'Change container resources or the replica count of a Deployment, StatefulSet or DaemonSet. The site agent applies it after it connects, unless it has expired.',
+  'commands.targetKind': 'Workload kind',
+  'commands.workloadName': 'Workload name',
+  'commands.workloadUID': 'Workload UID',
+  'commands.container': 'Container',
+  'commands.cpuRequest': 'CPU request',
+  'commands.cpuLimit': 'CPU limit',
+  'commands.memoryRequest': 'Memory request',
+  'commands.memoryLimit': 'Memory limit',
+  'commands.memorySlider': 'Memory limit',
+  'commands.resourcesHint':
+    'Kubernetes format: 500m or 1 for CPU, 256Mi or 1Gi for memory. An empty field is left unchanged.',
+  'commands.replicas': 'Replicas',
+  'commands.adjust': 'Prepare change',
+  'commands.adjustConfirmTitle': 'Confirm change',
+  'commands.adjustConfirmDescription':
+    'This request changes the selected workload’s spec, and Kubernetes recreates its pods. Check the site and exact target.',
+  'commands.adjustValidation':
+    'Fill the target. For resources give the container and at least one Kubernetes quantity; replicas must be 0–1000; lifetime 1–1440 minutes.',
+  'commands.fix': 'Fix',
 };

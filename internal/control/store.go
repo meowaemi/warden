@@ -10,12 +10,23 @@ import (
 	"time"
 )
 
+// MaxHistory is the number of snapshots kept per site.
 const MaxHistory = 500
+
+// MaxCommands caps the number of stored commands.
 const MaxCommands = 2000
+
+// MaxSites caps the number of sites.
 const MaxSites = 100
+
+// MaxBatch caps the snapshots or results in one sync.
 const MaxBatch = 100
+
+// MaxBody caps a request body.
 const MaxBody = 4 << 20
 
+// siteState is what the center knows about one site. Latest is the last
+// successful snapshot; a later failed one only sets LastError.
 type siteState struct {
 	ID                   string     `json:"id"`
 	LastContact          time.Time  `json:"last_contact"`
@@ -26,17 +37,22 @@ type siteState struct {
 	Latest               *Snapshot  `json:"latest,omitempty"`
 	History              []Snapshot `json:"history"`
 }
+
+// state is everything the center persists.
 type state struct {
 	Sites    map[string]*siteState `json:"sites"`
 	Commands []Command             `json:"commands"`
 	Results  map[string]Result     `json:"results"`
 }
+
+// Store is the center state kept in one JSON file.
 type Store struct {
 	mu   sync.Mutex
 	path string
 	data state
 }
 
+// Open loads the state file; a missing file means an empty state.
 func Open(path string) (*Store, error) {
 	s := &Store{path: path, data: state{Sites: map[string]*siteState{}, Commands: []Command{}, Results: map[string]Result{}}}
 	b, err := os.ReadFile(path)
@@ -63,6 +79,9 @@ func Open(path string) (*Store, error) {
 	}
 	return s, nil
 }
+
+// update applies fn to a copy of the state, writes it atomically and only
+// then swaps it in. On any error the state stays as it was.
 func (s *Store) update(fn func(*state) error) error {
 	b, err := json.Marshal(s.data)
 	if err != nil {
@@ -114,9 +133,8 @@ func (s *Store) update(fn func(*state) error) error {
 	return nil
 }
 
-// SyncDir flushes a directory, so a rename inside it survives power loss.
-// Windows cannot fsync a directory and makes renames durable by itself, so
-// there it does nothing.
+// SyncDir fsyncs a directory so a rename in it survives power loss.
+// On Windows, which cannot fsync a directory, it does nothing.
 func SyncDir(dir string) error {
 	if runtime.GOOS == "windows" {
 		return nil
@@ -129,8 +147,7 @@ func SyncDir(dir string) error {
 	return d.Sync()
 }
 
-// due reports whether any open command has passed its deadline, so a reader
-// can skip the write that expire would cause.
+// due reports whether an open command has passed its deadline.
 func due(d *state, now time.Time) bool {
 	for _, c := range d.Commands {
 		if !terminal(c.Status) && !now.Before(c.ExpiresAt) {
@@ -139,9 +156,15 @@ func due(d *state, now time.Time) bool {
 	}
 	return false
 }
+
+// terminal reports whether a command status is final. Only unknown can
+// still be refined by a late result.
 func terminal(status string) bool {
 	return status == "applied" || status == "failed" || status == "expired" || status == "unknown"
 }
+
+// expire closes overdue commands: a queued one never ran and expires,
+// a dispatched one may have run and becomes unknown.
 func expire(d *state, now time.Time) {
 	for i := range d.Commands {
 		c := &d.Commands[i]

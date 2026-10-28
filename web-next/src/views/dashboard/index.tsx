@@ -30,24 +30,31 @@ import { ProblemsList } from '@/widgets/problems-list';
 import { ObservationHistory } from '@/widgets/observation-history';
 import { CommandsList } from '@/widgets/commands-list';
 import { QueueRestart } from '@/features/queue-restart';
+import { AdjustWorkload } from '@/features/adjust-workload';
+import { draftFromProblem, type Draft } from '@/features/adjust-workload/model';
+import type { Problem } from '@/shared/api/types';
 import { DemoControls } from '@/features/toggle-demo-link';
 import { neverObserved } from '@/shared/lib/observed';
 
+/** Dashboard is the operator console: sites, problems, commands and history. */
 export function Dashboard() {
   const { t, locale, setLocale, theme, setTheme, timeZone } = useI18n();
   const { connected, sessionKey, connect, disconnect } = useSession();
   const [settings, setSettings] = useState(false);
   const [selected, setSelected] = useState('');
+  // The problem chosen for fixing, tied to its site.
+  const [fix, setFix] = useState<{ siteID: string; draft: Draft } | null>(null);
   const sitesQuery = useGetSitesQuery(sessionKey, { skip: !connected, pollingInterval: 5000 });
-  // Whether the center is a demo does not change while it runs, so this is
-  // asked once per session; the demo toggle refreshes it itself.
+  // Demo mode does not change while the center runs, so it is asked once.
   const demo = useGetDemoQuery(sessionKey, { skip: !connected });
   const sites = connected ? (sitesQuery.currentData ?? []) : [];
+  // The chosen site, or the first one if the choice is gone.
   const selectedID = sites.some((s) => s.id === selected) ? selected : (sites[0]?.id ?? '');
   const site = sites.find((s) => s.id === selectedID);
   const unavailable = sitesQuery.isError;
   const authenticated = connected && !!sitesQuery.currentData && !unavailable;
   const error = sitesQuery.error as APIError | undefined;
+  // statusKey describes the connection to the center.
   const statusKey = !connected
     ? 'shell.notConnected'
     : unavailable
@@ -56,9 +63,11 @@ export function Dashboard() {
         ? 'shell.centerAvailable'
         : 'shell.connecting';
   const problemCount = sites.reduce((n, s) => n + s.messages.length, 0);
+  // A site counts as stale when its data cannot be trusted now.
   const staleCount = sites.filter(
     (s) => unavailable || s.stale || neverObserved(s.last_success),
   ).length;
+  // login takes the token from the form and clears the field.
   function login(event: React.FormEvent) {
     event.preventDefault();
     const form = event.currentTarget as HTMLFormElement;
@@ -306,7 +315,17 @@ export function Dashboard() {
                     </span>
                   </div>
                   <SiteDetails site={site} unavailable={unavailable} />
-                  <ProblemsList site={site} unavailable={unavailable} />
+                  <ProblemsList
+                    site={site}
+                    unavailable={unavailable}
+                    // A fix fills the adjust form and scrolls to it.
+                    onFix={(p: Problem) => {
+                      const draft = draftFromProblem(p);
+                      if (!draft) return;
+                      setFix({ siteID: site.id, draft });
+                      document.getElementById('adjust')?.scrollIntoView({ behavior: 'smooth' });
+                    }}
+                  />
                 </>
               ) : (
                 <section className="panel empty-dashboard">
@@ -325,7 +344,17 @@ export function Dashboard() {
               <span>{t('shell.commands')}</span>
             </div>
             <div className="commands-grid">
-              <QueueRestart siteID={selectedID} simulated={demo.currentData?.simulated === true} />
+              <div className="stack">
+                <QueueRestart
+                  siteID={selectedID}
+                  simulated={demo.currentData?.simulated === true}
+                />
+                <AdjustWorkload
+                  siteID={selectedID}
+                  simulated={demo.currentData?.simulated === true}
+                  seed={fix?.siteID === selectedID ? fix.draft : null}
+                />
+              </div>
               {site ? (
                 <CommandsList siteID={selectedID} />
               ) : (

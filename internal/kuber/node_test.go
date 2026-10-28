@@ -10,6 +10,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 )
 
+// node returns a node with the given conditions.
 func node(name string, unschedulable bool, conds ...corev1.NodeCondition) *corev1.Node {
 	return &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{Name: name},
@@ -18,10 +19,13 @@ func node(name string, unschedulable bool, conds ...corev1.NodeCondition) *corev
 	}
 }
 
+// cond returns a node condition with a readable message.
 func cond(t corev1.NodeConditionType, s corev1.ConditionStatus) corev1.NodeCondition {
 	return corev1.NodeCondition{Type: t, Status: s, Message: string(t) + " is " + string(s)}
 }
 
+// TestNodeProblems checks which node conditions are reported, along with the
+// problems of a pod on that node.
 func TestNodeProblems(t *testing.T) {
 	cs := fake.NewSimpleClientset(
 		node("healthy", false, cond(corev1.NodeReady, corev1.ConditionTrue), cond(corev1.NodeMemoryPressure, corev1.ConditionFalse)),

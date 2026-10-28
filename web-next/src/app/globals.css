@@ -1,5 +1,4 @@
-/* Browser reset: the rules of Tailwind's preflight this page relies on. It
-   stays in a layer, so every rule below wins over it as it did with Tailwind. */
+/* Browser reset, ported from Tailwind preflight. */
 @layer base {
   *,
   ::before,
@@ -105,6 +104,7 @@
   }
 }
 
+/* Colors, radii and fonts; the dark theme is the default. */
 :root {
   --bg: #0b1018;
   --surface: #111925;
@@ -131,6 +131,7 @@
   font-size: 14px;
   line-height: 1.55;
 }
+/* Light theme. */
 :root[data-theme='light'] {
   --bg: #f3f6fa;
   --surface: #fff;
@@ -147,6 +148,7 @@
   --shadow: 0 18px 55px #20364c0a;
   color-scheme: light;
 }
+/* Base elements. */
 * {
   box-sizing: border-box;
 }
@@ -238,6 +240,7 @@ details summary {
   font-size: 12px;
   color: var(--muted);
 }
+/* Accessibility helpers. */
 .sr-only {
   position: absolute;
   width: 1px;
@@ -263,11 +266,13 @@ details summary {
 .skip-link:focus {
   transform: none;
 }
+/* Page frame: a sidebar next to the workspace. */
 .app-shell {
   min-height: 100vh;
   display: grid;
   grid-template-columns: 230px minmax(0, 1fr);
 }
+/* Sidebar: brand, navigation, connection status and operator. */
 .sidebar {
   position: sticky;
   top: 0;
@@ -391,6 +396,7 @@ details summary {
   margin-left: auto;
   width: 26px;
 }
+/* Workspace: top bar and main content. */
 .workspace {
   min-width: 0;
 }
@@ -460,6 +466,7 @@ details summary {
   padding: 36px 38px 0;
   margin: auto;
 }
+/* Page heading and connection state. */
 .page-heading {
   display: flex;
   align-items: flex-start;
@@ -509,6 +516,7 @@ details summary {
 .connection-state.offline {
   color: var(--warning);
 }
+/* Panels and layout helpers. */
 .panel {
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -567,6 +575,7 @@ details summary {
 .toolbar > .field {
   flex: 1 1 150px;
 }
+/* Form fields and buttons. */
 .field {
   display: flex;
   flex-direction: column;
@@ -632,6 +641,7 @@ select:focus {
 .button-ghost {
   background: transparent;
 }
+/* Badges and notices. */
 .badge {
   display: inline-flex;
   align-items: center;
@@ -688,6 +698,7 @@ select:focus {
   align-items: flex-start;
   gap: 8px;
 }
+/* Collapsible technical details and empty states. */
 .technical {
   margin-top: 8px;
 }
@@ -708,6 +719,7 @@ select:focus {
 .empty-state svg {
   color: var(--muted);
 }
+/* Connection form. */
 .connect-panel {
   margin-bottom: 24px;
   display: flex;
@@ -745,6 +757,7 @@ select:focus {
 .connect-form .field {
   flex: 1 1 190px;
 }
+/* Counters of sites, problems and stale sites. */
 .stats-strip {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -788,6 +801,7 @@ select:focus {
   letter-spacing: -1px;
   font-weight: 600;
 }
+/* Monitoring: the sites list next to the selected site. */
 .monitoring-grid {
   display: grid;
   grid-template-columns: 240px minmax(0, 1fr);
@@ -866,6 +880,7 @@ select:focus {
   font-size: 10px;
   color: var(--muted);
 }
+/* Facts of the selected site. */
 .site-facts {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -896,6 +911,7 @@ select:focus {
 .site-facts + .notice {
   margin-top: 16px;
 }
+/* Problem cards and search. */
 .problem-card {
   border: 1px solid var(--border);
   border-left: 2px solid var(--warning);
@@ -924,6 +940,7 @@ select:focus {
 .search-field .input {
   width: 100%;
 }
+/* Placeholder when no site is selected. */
 .empty-dashboard {
   min-height: 280px;
   display: flex;
@@ -947,6 +964,7 @@ select:focus {
   color: var(--accent);
   margin-bottom: 8px;
 }
+/* Commands: forms and the commands list. */
 .commands-section {
   margin-top: 32px;
 }
@@ -988,6 +1006,7 @@ select:focus {
 .command-item .mono {
   font-size: 10px;
 }
+/* History table. */
 .table-scroll {
   overflow: auto;
   max-width: 100%;
@@ -1016,6 +1035,7 @@ select:focus {
 #history {
   margin-top: 24px;
 }
+/* Confirmation dialog. */
 .dialog-overlay {
   position: fixed;
   inset: 0;
@@ -1049,6 +1069,7 @@ select:focus {
   justify-content: flex-end;
   margin-top: 9px;
 }
+/* Footer. */
 .workspace-footer {
   display: flex;
   align-items: center;
@@ -1065,6 +1086,7 @@ select:focus {
   align-items: center;
   gap: 6px;
 }
+/* Spinning refresh icon. */
 .spin {
   animation: spin 1s linear infinite;
 }
@@ -1073,6 +1095,7 @@ select:focus {
     transform: rotate(360deg);
   }
 }
+/* Responsive layout, from wide screens down to phones. */
 @media (min-width: 1600px) {
   .main-content {
     padding-top: 44px;
@@ -1335,6 +1358,7 @@ select:focus {
     min-width: 560px;
   }
 }
+/* No animation for viewers who ask for less motion. */
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
@@ -1345,4 +1369,9 @@ select:focus {
   * {
     transition: none !important;
   }
+}
+/* Memory slider of the adjust form. */
+.range {
+  width: 100%;
+  accent-color: var(--accent);
 }

@@ -3,6 +3,7 @@ import React from 'react';
 import { useGetDemoQuery, useSetDemoMutation } from '../../shared/api';
 import { useSession } from '../../shared/lib/session';
 import { useI18n } from '../../shared/i18n';
+/** DemoControls cuts and restores the simulated agent's link; demo mode only. */
 export function DemoControls({ siteID }: { siteID: string }) {
   const { connected, sessionKey } = useSession();
   const { t } = useI18n();
@@ -28,6 +29,7 @@ export function DemoControls({ siteID }: { siteID: string }) {
         onClick={() => {
           void setLink({ connected: !demo.connected, sessionKey })
             .unwrap()
+            // The error is shown from result.isError.
             .catch(() => {});
         }}
       >

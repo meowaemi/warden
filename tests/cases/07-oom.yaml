@@ -1,4 +1,4 @@
-# Uses more memory than its limit -> OOMKilled, handled by the oom-limit rule.
+# Uses more memory than its limit -> OOMKilled (oom-limit rule).
 apiVersion: v1
 kind: Pod
 metadata:

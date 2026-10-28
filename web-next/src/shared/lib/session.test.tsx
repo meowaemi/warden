@@ -6,6 +6,7 @@ import { makeStore } from './store';
 import { SessionProvider, useSession } from './session';
 import { installCredential } from './credential';
 import { api } from '@/shared/api';
+// Connecting and disconnecting clear the API cache and never store the token.
 afterEach(() => {
   cleanup();
   installCredential('');

@@ -15,6 +15,9 @@ import (
 	"warden/internal/control"
 )
 
+// TestExecuteCommandPreconditionsAndOutcomes runs a restart against a fake API
+// server. The patch must check the UID and resourceVersion and keep existing
+// annotations; the status depends on the target and the server's reply.
 func TestExecuteCommandPreconditionsAndOutcomes(t *testing.T) {
 	for _, tc := range []struct {
 		name, uid, marker string

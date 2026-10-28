@@ -12,6 +12,7 @@ import (
 	"warden/internal/control"
 )
 
+// operator is the operator token of the test center.
 const operator = "demo-test-operator"
 
 // call sends one operator request to the demo handler and decodes the JSON
@@ -48,12 +49,14 @@ func wait(t *testing.T, what string, cond func() bool) {
 	}
 }
 
+// siteView is the part of /api/sites the tests read.
 type siteView struct {
 	ID          string    `json:"id"`
 	Stale       bool      `json:"stale"`
 	LastSuccess time.Time `json:"last_success"`
 }
 
+// site returns the demo site, false if it is not registered yet.
 func site(t *testing.T, h http.Handler) (siteView, bool) {
 	var sites []siteView
 	call(t, h, "GET", "/api/sites", nil, &sites)
@@ -63,6 +66,7 @@ func site(t *testing.T, h http.Handler) (siteView, bool) {
 	return sites[0], true
 }
 
+// statuses returns the status of each demo command by ID.
 func statuses(t *testing.T, h http.Handler) map[string]string {
 	var cs []control.Command
 	call(t, h, "GET", "/api/commands?site_id=demo-site", nil, &cs)
@@ -73,21 +77,72 @@ func statuses(t *testing.T, h http.Handler) map[string]string {
 	return m
 }
 
+// history returns the stored snapshots of the demo site.
 func history(t *testing.T, h http.Handler) []control.Snapshot {
 	var hs []control.Snapshot
 	call(t, h, "GET", "/api/history?site_id=demo-site", nil, &hs)
 	return hs
 }
 
+// command returns a restart of the demo app that expires after ttl.
 func command(id string, ttl time.Duration) control.Command {
 	return control.Command{ID: id, SiteID: "demo-site", Kind: "restart_deployment", Namespace: "demo", Name: "demo-app", TargetUID: "demo-deployment-uid", ExpiresAt: time.Now().Add(ttl).UTC()}
 }
 
-// TestLinkOutage runs a real center and a real agent with simulated
-// collection and execution, cuts the link between them and checks what an
-// operator sees: commands wait or expire, the site goes stale, and after
-// reconnection the buffered observations arrive and the waiting command runs
-// exactly once.
+// TestMemoryFix walks the operator's fix: OOM reported, memory raised on the
+// owner the problem names, OOM gone.
+func TestMemoryFix(t *testing.T) {
+	dir := t.TempDir()
+	st, err := control.Open(filepath.Join(dir, "center.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	h, cleanup, err := Start(ctx, st, operator, filepath.Join(dir, "agent.json"), 50*time.Millisecond, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+
+	type problem struct {
+		Reason string `json:"reason"`
+		Target struct {
+			Namespace string `json:"namespace"`
+			Container string `json:"container"`
+			OwnerKind string `json:"ownerKind"`
+			OwnerName string `json:"ownerName"`
+			OwnerUID  string `json:"ownerUID"`
+		} `json:"target"`
+	}
+	oom := func() (problem, bool) {
+		var sites []struct {
+			Messages []problem `json:"messages"`
+		}
+		call(t, h, "GET", "/api/sites", nil, &sites)
+		for _, s := range sites {
+			for _, m := range s.Messages {
+				if m.Reason == "OOMKilled" {
+					return m, true
+				}
+			}
+		}
+		return problem{}, false
+	}
+	var p problem
+	wait(t, "simulated OOM reported", func() bool { var ok bool; p, ok = oom(); return ok })
+
+	fix := control.Command{ID: "raise-memory", SiteID: "demo-site", Kind: control.KindSetResources, TargetKind: p.Target.OwnerKind, Namespace: p.Target.Namespace, Name: p.Target.OwnerName, TargetUID: p.Target.OwnerUID, Container: p.Target.Container, Resources: &control.Resources{MemoryLimit: "256Mi"}, ExpiresAt: time.Now().Add(time.Minute).UTC()}
+	if code := call(t, h, "POST", "/api/commands", fix, nil); code != http.StatusOK {
+		t.Fatalf("queue fix from the problem's owner: HTTP %d", code)
+	}
+	wait(t, "fix applied", func() bool { return statuses(t, h)[fix.ID] == "applied" })
+	wait(t, "OOM gone", func() bool { _, ok := oom(); return !ok })
+}
+
+// TestLinkOutage cuts the agent's link: commands wait or expire and the site
+// goes stale; after reconnection the buffered snapshots arrive and the
+// waiting command runs once.
 func TestLinkOutage(t *testing.T) {
 	dir := t.TempDir()
 	st, err := control.Open(filepath.Join(dir, "center.json"))

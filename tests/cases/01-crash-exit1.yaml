@@ -1,4 +1,4 @@
-# Process exits with code 1 right away -> Error, then CrashLoopBackOff.
+# Exits with code 1 -> Error, then CrashLoopBackOff.
 apiVersion: v1
 kind: Pod
 metadata:

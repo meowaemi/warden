@@ -1,3 +1,4 @@
+/** monitorRu holds the texts of sites, problems and history. */
 export const monitorRu = {
   'monitor.sites': 'Площадки',
   'monitor.selectSite': 'Выбрать площадку',
@@ -55,6 +56,7 @@ export const monitorRu = {
   'monitor.reason.PIDPressure': 'На сервере заканчиваются идентификаторы процессов',
   'monitor.reason.NodeCordoned': 'Сервер выведен из работы',
 } as const;
+/** monitorEn is the English version of monitorRu. */
 export const monitorEn: Record<keyof typeof monitorRu, string> = {
   'monitor.sites': 'Sites',
   'monitor.selectSite': 'Select site',

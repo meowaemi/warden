@@ -1,3 +1,5 @@
+// Package demo runs a center with a simulated site agent. Nothing touches
+// Kubernetes; collection and execution are faked.
 package demo
 
 import (
@@ -14,6 +16,8 @@ import (
 	"warden/internal/messages"
 )
 
+// Start runs the simulated agent and returns the center handler, extended
+// with /api/demo/link to cut and restore the agent's link, and a cleanup func.
 func Start(ctx context.Context, st *control.Store, operator, statePath string, interval, stale time.Duration) (http.Handler, func(), error) {
 	var connected atomic.Bool
 	connected.Store(true)
@@ -23,6 +27,7 @@ func Start(ctx context.Context, st *control.Store, operator, statePath string, i
 	if err != nil {
 		return nil, nil, err
 	}
+	// gate stands between agent and center and fails while the link is cut.
 	gate := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !connected.Load() {
 			http.Error(w, "simulated link outage", 503)
@@ -34,13 +39,27 @@ func Start(ctx context.Context, st *control.Store, operator, statePath string, i
 	go func() { _ = gate.Serve(listener) }()
 	var observations atomic.Uint64
 	var applied atomic.Uint64
+	// The simulated container is OOM killed until its memory limit is raised.
+	var memoryRaised atomic.Bool
+	target := messages.Target{Namespace: "demo", Pod: "demo-app", Container: "app", OwnerKind: control.Deployment, OwnerName: "demo-app", OwnerUID: "demo-deployment-uid"}
 	go func() {
 		err := agent.Run(child, agent.Config{SiteID: "demo-site", CenterURL: "http://" + listener.Addr().String(), Token: token, StatePath: statePath, Interval: interval, MaxSnapshots: 1000}, func(context.Context) (control.Snapshot, error) {
 			n := observations.Add(1)
-			return control.Snapshot{Messages: []messages.Message{{Severity: messages.Warning, Outcome: messages.Reported, Reason: "DemoObservation", Rule: "demo", Title: "Simulated site observation", Text: fmt.Sprintf("Observation %d; simulated applied commands %d. No real Kubernetes connection.", n, applied.Load()), Target: messages.Target{Namespace: "demo", Pod: "demo-app", Container: "app"}, Time: time.Now().UTC()}}}, nil
+			now := time.Now().UTC()
+			msgs := []messages.Message{{Severity: messages.Warning, Outcome: messages.Reported, Reason: "DemoObservation", Rule: "demo", Title: "Simulated site observation", Text: fmt.Sprintf("Observation %d; simulated applied commands %d. No real Kubernetes connection.", n, applied.Load()), Target: target, Time: now}}
+			if !memoryRaised.Load() {
+				msgs = append(msgs, messages.Message{Severity: messages.Error, Outcome: messages.Reported, Reason: "OOMKilled", Rule: "oom-limit", Title: "Container killed: out of memory", Text: "SIMULATED: the container exceeded its memory limit and was killed", Target: target, Details: []messages.Detail{{Key: "Memory limit", Value: "128Mi"}}, Time: now})
+			}
+			return control.Snapshot{Messages: msgs}, nil
 		}, func(_ context.Context, c control.Command) control.Result {
 			if c.Namespace != "demo" || c.Name != "demo-app" || c.TargetUID != "demo-deployment-uid" {
 				return control.Result{Status: "failed", Note: "demo target must be demo/demo-app with UID demo-deployment-uid"}
+			}
+			if c.Kind == control.KindSetResources && c.Container != "app" {
+				return control.Result{Status: "failed", Note: "SIMULATED: container " + c.Container + " not found in the pod template"}
+			}
+			if c.Kind == control.KindSetResources && c.Resources.MemoryLimit != "" {
+				memoryRaised.Store(true)
 			}
 			applied.Add(1)
 			return control.Result{Status: "applied", Note: "SIMULATED acknowledgement; no Kubernetes resources changed"}

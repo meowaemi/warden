@@ -4,6 +4,8 @@ import { useGetCommandsQuery } from '../../shared/api';
 import type { CommandStatus } from '../../shared/api/types';
 import { useSession } from '../../shared/lib/session';
 import { useI18n } from '../../shared/i18n';
+import { changes } from '../../shared/lib/command-change';
+/** tone is the badge color of each command status. */
 const tone: Record<CommandStatus, string> = {
   queued: 'neutral',
   dispatched: 'warning',
@@ -12,6 +14,8 @@ const tone: Record<CommandStatus, string> = {
   expired: 'neutral',
   unknown: 'warning',
 };
+
+/** CommandsList shows a site's commands with what they change and how they ended. */
 export function CommandsList({ siteID }: { siteID: string }) {
   const { t, date } = useI18n();
   const { connected, sessionKey } = useSession();
@@ -42,12 +46,18 @@ export function CommandsList({ siteID }: { siteID: string }) {
         <article key={command.id} className="stack command-item">
           <div className="row">
             <strong className="mono">
+              {t(`commands.kind.${command.kind}`)} · {command.target_kind ?? 'Deployment'}{' '}
               {command.namespace}/{command.name}
             </strong>
             <span className={`badge badge-${tone[command.status]}`}>
               {t(`commands.${command.status}`)}
             </span>
           </div>
+          {changes(command).map((c) => (
+            <p key={c.label} className="mono">
+              {t(c.label)}: {c.value}
+            </p>
+          ))}
           <p className="muted">
             {t('commands.expires')}: {date(command.expires_at)}
           </p>

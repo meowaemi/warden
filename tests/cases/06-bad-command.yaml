@@ -1,4 +1,4 @@
-# Command binary does not exist -> StartError / RunContainerError.
+# Missing command binary -> StartError / RunContainerError.
 apiVersion: v1
 kind: Pod
 metadata:

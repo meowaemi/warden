@@ -4,16 +4,19 @@ import { History, RefreshCw } from 'lucide-react';
 import { useGetHistoryQuery } from '@/shared/api';
 import { useSession } from '@/shared/lib/session';
 import { useI18n } from '@/shared/i18n';
+/** ObservationHistory loads a site's stored snapshots on request. */
 export function ObservationHistory({ siteID }: { siteID: string }) {
   const { t, date } = useI18n();
   const { connected, sessionKey } = useSession();
   const [requested, setRequested] = useState<string | null>(null);
+  // History loads only on a click, again for every site and session.
   const requestKey = `${sessionKey}:${siteID}`;
   const enabled = connected && requested === requestKey;
   const { currentData, isFetching, isError, refetch } = useGetHistoryQuery(
     { siteID, sessionKey },
     { skip: !enabled },
   );
+  // Newest first; a reply for another site is ignored.
   const entries = currentData
     ?.filter((entry) => entry.site_id === siteID)
     .slice()

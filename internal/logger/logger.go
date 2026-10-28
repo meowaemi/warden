@@ -1,5 +1,5 @@
-// Package logger is warden's operational log for the developer. Times are
-// written in UTC.
+// Package logger is the operational log for developers. Users get
+// messages instead; times here are UTC.
 package logger
 
 import (
@@ -10,6 +10,7 @@ import (
 	"warden/internal/messages"
 )
 
+// Log is the shared logger.
 var Log = slog.New(
 	slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
@@ -22,8 +23,7 @@ var Log = slog.New(
 	}),
 )
 
-// Appeared logs a problem that has just appeared, at the level matching its
-// severity.
+// Appeared logs a new problem at the level of its severity.
 func Appeared(m messages.Message) {
 	Log.Log(context.Background(), levelOf(m.Severity), "problem appeared", problemAttrs(m)...)
 }
@@ -33,7 +33,7 @@ func Resolved(m messages.Message) {
 	Log.Info("problem resolved", problemAttrs(m)...)
 }
 
-// problemAttrs returns the data of a problem as log key-value pairs.
+// problemAttrs returns a problem as log key-value pairs.
 func problemAttrs(m messages.Message) []any {
 	return []any{
 		"key", m.Key(),
@@ -48,7 +48,7 @@ func problemAttrs(m messages.Message) []any {
 	}
 }
 
-// levelOf returns the log level matching a message severity.
+// levelOf maps a severity to a log level.
 func levelOf(s messages.Severity) slog.Level {
 	switch s {
 	case messages.Error:

@@ -15,23 +15,35 @@ import (
 	"warden/internal/messages"
 )
 
+// identifier matches IDs and UIDs.
 var identifier = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$`)
+
+// dnsName matches Kubernetes object names.
 var dnsName = regexp.MustCompile(`^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$`)
 
+// validName reports whether s is a valid Kubernetes object name.
 func validName(s string) bool { return len(s) > 0 && len(s) <= 253 && dnsName.MatchString(s) }
 
+// httpError is an error with the HTTP status to reply with.
 type httpError struct {
 	code int
 	text string
 }
 
-func (e httpError) Error() string   { return e.text }
+// Error returns the text sent to the client.
+func (e httpError) Error() string { return e.text }
+
+// fail returns an error that replies with code and text s.
 func fail(code int, s string) error { return httpError{code, s} }
+
+// write replies with v as JSON.
 func write(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(v)
 }
+
+// problem replies with err; any error without a status is a storage failure.
 func problem(w http.ResponseWriter, err error) {
 	var he httpError
 	if errors.As(err, &he) {
@@ -40,6 +52,8 @@ func problem(w http.ResponseWriter, err error) {
 		write(w, 500, map[string]string{"error": "persistent storage failure"})
 	}
 }
+
+// decode reads exactly one JSON value, rejecting unknown fields and oversized bodies.
 func decode(w http.ResponseWriter, r *http.Request, v any) error {
 	r.Body = http.MaxBytesReader(w, r.Body, MaxBody)
 	d := json.NewDecoder(r.Body)
@@ -52,14 +66,22 @@ func decode(w http.ResponseWriter, r *http.Request, v any) error {
 	}
 	return nil
 }
+
+// equalToken compares tokens in constant time.
 func equalToken(a, b string) bool {
 	return a != "" && b != "" && subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }
+
+// Handler serves the center API. Agents authenticate with their site token,
+// operators with the operator token. A site is stale when its last
+// successful snapshot is older than staleAfter.
 func Handler(st *Store, operatorToken string, siteTokens map[string]string, staleAfter time.Duration) http.Handler {
 	if staleAfter <= 0 {
 		staleAfter = 30 * time.Second
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The agent sync route takes a site token, which also names the site;
+		// every other route takes the operator token.
 		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		if !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
 			token = ""
@@ -83,6 +105,7 @@ func Handler(st *Store, operatorToken string, siteTokens map[string]string, stal
 			write(w, 401, map[string]string{"error": "unauthorized"})
 			return
 		}
+		// The body is read before locking, so a slow client cannot stall the center.
 		var inputCommand Command
 		var inputSync SyncRequest
 		if r.Method == http.MethodPost {
@@ -100,10 +123,12 @@ func Handler(st *Store, operatorToken string, siteTokens map[string]string, stal
 				}
 			}
 		}
+		// One request at a time; every change is on disk before the reply.
 		st.mu.Lock()
 		defer st.mu.Unlock()
 		now := time.Now().UTC()
 		switch r.URL.Path {
+		// Sites with their latest problems and freshness.
 		case "/api/sites":
 			if r.Method != "GET" {
 				w.WriteHeader(405)
@@ -129,6 +154,7 @@ func Handler(st *Store, operatorToken string, siteTokens map[string]string, stal
 				views = append(views, map[string]any{"id": s.ID, "last_contact": s.LastContact, "last_success": s.LastSuccess, "stale": s.LastSuccess.IsZero() || now.Sub(s.LastSuccess) > staleAfter || s.LastCollectionFailed, "messages": ms, "last_error": s.LastError})
 			}
 			write(w, 200, views)
+		// Stored snapshots of one site.
 		case "/api/history":
 			if r.Method != "GET" {
 				w.WriteHeader(405)
@@ -139,8 +165,10 @@ func Handler(st *Store, operatorToken string, siteTokens map[string]string, stal
 				h = s.History
 			}
 			write(w, 200, h)
+		// GET lists commands, expiring overdue ones first; POST queues one.
 		case "/api/commands":
 			if r.Method == "GET" {
+				// Write only when a command actually expires.
 				if due(&st.data, now) {
 					if err := st.update(func(d *state) error { expire(d, now); return nil }); err != nil {
 						problem(w, err)
@@ -162,6 +190,8 @@ func Handler(st *Store, operatorToken string, siteTokens map[string]string, stal
 			}
 			c := inputCommand
 			err := st.update(func(d *state) error {
+				// The ID is the idempotency key: a repeat returns the stored
+				// command, the same ID with other content is a conflict.
 				for _, old := range d.Commands {
 					if old.ID == c.ID {
 						a, b := old, c
@@ -178,8 +208,11 @@ func Handler(st *Store, operatorToken string, siteTokens map[string]string, stal
 						return nil
 					}
 				}
-				if !identifier.MatchString(c.ID) || siteTokens[c.SiteID] == "" || c.Kind != "restart_deployment" || !validName(c.Namespace) || !validName(c.Name) || !identifier.MatchString(c.TargetUID) || !c.ExpiresAt.After(now) || c.ExpiresAt.After(now.Add(24*time.Hour)) {
-					return fail(400, "invalid command, unknown site, or deadline outside next 24 hours")
+				if err := c.Validate(); err != nil {
+					return fail(400, "invalid command: "+err.Error())
+				}
+				if siteTokens[c.SiteID] == "" || !c.ExpiresAt.After(now) || c.ExpiresAt.After(now.Add(24*time.Hour)) {
+					return fail(400, "unknown site, or deadline outside next 24 hours")
 				}
 				if c.Status != "" || !c.CreatedAt.IsZero() || c.Note != "" {
 					return fail(400, "server-managed command fields must be omitted")
@@ -197,6 +230,7 @@ func Handler(st *Store, operatorToken string, siteTokens map[string]string, stal
 				return
 			}
 			write(w, 200, c)
+		// An agent delivers snapshots and results and gets its next command.
 		case "/api/agent/sync":
 			if r.Method != "POST" {
 				w.WriteHeader(405)
@@ -223,8 +257,7 @@ func Handler(st *Store, operatorToken string, siteTokens map[string]string, stal
 				}
 				s.LastContact = now
 				// A bad snapshot is acknowledged and reported instead of failing
-				// the whole request: otherwise the agent would resend the same
-				// batch forever and nothing after it would ever arrive.
+				// the batch, or the agent would resend it forever.
 				for _, snap := range req.Snapshots {
 					reject := func(reason string) {
 						resp.AckIDs = append(resp.AckIDs, snap.ID)
@@ -238,16 +271,11 @@ func Handler(st *Store, operatorToken string, siteTokens map[string]string, stal
 						reject("invalid snapshot")
 						continue
 					}
-					// The agent corrects its clock by the skew it measured, but
-					// before its first sync it cannot know it. A time from the
-					// future is clamped, never trusted: it would keep the site
-					// fresh after the agent goes silent.
+					// A future time would keep the site fresh after it goes silent.
 					if snap.ObservedAt.After(now) {
 						snap.ObservedAt = now
 					}
-					// IDs are random 128-bit values chosen by this site's agent,
-					// so the same ID is a resend, even if a resend carries a
-					// slightly different clock correction.
+					// The same ID is a resend, even with another clock correction.
 					exists := false
 					for _, old := range s.History {
 						if old.ID == snap.ID {
@@ -304,8 +332,7 @@ func Handler(st *Store, operatorToken string, siteTokens map[string]string, stal
 					if res.FinishedAt.After(now) {
 						res.FinishedAt = now
 					}
-					// FinishedAt is left out of the comparison: a resend carries
-					// the agent's latest clock correction, not the first one.
+					// FinishedAt can change between resends; compare the outcome only.
 					old, hasResult := d.Results[c.ID]
 					if hasResult && old.Status == res.Status && old.Note == res.Note {
 						resp.ResultAckIDs = append(resp.ResultAckIDs, c.ID)
@@ -329,6 +356,7 @@ func Handler(st *Store, operatorToken string, siteTokens map[string]string, stal
 					resp.ResultAckIDs = append(resp.ResultAckIDs, c.ID)
 				}
 				expire(d, now)
+				// One command per sync, redelivered until its result arrives.
 				for i := range d.Commands {
 					c := &d.Commands[i]
 					if c.SiteID == site && !terminal(c.Status) {

@@ -1,3 +1,4 @@
+// Package server runs an HTTP server with sane timeouts.
 package server
 
 import (
@@ -9,10 +10,12 @@ import (
 	"warden/internal/logger"
 )
 
+// Server is an HTTP server.
 type Server struct {
 	srv *http.Server
 }
 
+// New returns a server for h on addr.
 func New(addr string, h http.Handler) *Server {
 	return &Server{srv: &http.Server{
 		Addr:              addr,
@@ -23,6 +26,9 @@ func New(addr string, h http.Handler) *Server {
 		IdleTimeout:       60 * time.Second,
 	}}
 }
+
+// Start listens at once, so a busy port is an error here, then serves in the
+// background; onFail is called if serving fails later.
 func (s *Server) Start(onFail func()) error {
 	listener, err := net.Listen("tcp", s.srv.Addr)
 	if err != nil {
@@ -37,6 +43,8 @@ func (s *Server) Start(onFail func()) error {
 	}()
 	return nil
 }
+
+// Shutdown stops the server, waiting up to timeout for open requests.
 func (s *Server) Shutdown(timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()

@@ -1,4 +1,4 @@
-// Package api serves warden's data over HTTP for the web interface.
+// Package api serves the problems of the local mode over HTTP.
 package api
 
 import (
@@ -9,14 +9,13 @@ import (
 	"warden/internal/store"
 )
 
-// messageDTO is a message as the web interface receives it: all fields of
-// messages.Message plus its key, which identifies the problem.
+// messageDTO is a message with its key.
 type messageDTO struct {
 	messages.Message
 	Key string `json:"key"`
 }
 
-// Handler returns the HTTP handler with all API routes.
+// Handler serves GET /api/messages.
 func Handler(st *store.Store) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/messages", func(w http.ResponseWriter, r *http.Request) {

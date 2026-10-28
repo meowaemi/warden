@@ -1,24 +1,31 @@
 import type { BaseQueryFn } from '@reduxjs/toolkit/query';
 import { authorizationFor, sessionKey } from '@/shared/lib/credential';
 import type { APIError } from './types';
+/** RequestArgs is an API call bound to the session that made it. */
 export interface RequestArgs {
   path: string;
   method?: 'GET' | 'POST';
   body?: unknown;
   sessionKey: number;
 }
+/** staleSession is the reply when the session changed during a request. */
 const staleSession = (): { error: APIError } => ({
   error: {
     status: 'FETCH_ERROR',
     message: 'Session changed; response discarded. Operation outcome may be unknown.',
   },
 });
+/**
+ * authenticatedQuery sends the operator token, gives up after 15 s and drops
+ * replies that arrive after a session change. The token is redacted from errors.
+ */
 export const authenticatedQuery: BaseQueryFn<RequestArgs, unknown, APIError> = async (
   args,
   api,
 ) => {
   const authorization = authorizationFor(args.sessionKey);
   if (!authorization) return staleSession();
+  // Only same-origin API paths, so the token never leaves the center.
   if (!args.path.startsWith('/api/') || args.path.includes('://')) {
     return { error: { status: 'FETCH_ERROR', message: 'Invalid API path.' } };
   }
@@ -45,6 +52,7 @@ export const authenticatedQuery: BaseQueryFn<RequestArgs, unknown, APIError> = a
       redirect: 'error',
       cache: 'no-store',
     });
+    // A reply that arrives after a session change is dropped.
     const text = await response.text();
     if (sessionKey() !== args.sessionKey) return staleSession();
     let data: unknown;
@@ -63,6 +71,7 @@ export const authenticatedQuery: BaseQueryFn<RequestArgs, unknown, APIError> = a
         data && typeof data === 'object' && 'error' in data && typeof data.error === 'string'
           ? data.error
           : `HTTP ${response.status}`;
+      // The center may echo the token in an error; it never reaches the UI.
       const secret = authorization.slice('Bearer '.length);
       return {
         error: {

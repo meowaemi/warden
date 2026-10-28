@@ -2,18 +2,17 @@ package rules
 
 import "warden/internal/messages"
 
-// Reasons of node (server) problems. kuber reports a node problem as an Input
-// with NodeName set and PodName empty.
+// Reasons of node problems.
 const (
-	NodeNotReady    = "NodeNotReady"    // Ready=False: the kubelet runs but the node cannot run pods
-	NodeUnreachable = "NodeUnreachable" // Ready=Unknown: the node stopped reporting, it is down or cut off
+	NodeNotReady    = "NodeNotReady"    // connected, but cannot run pods
+	NodeUnreachable = "NodeUnreachable" // stopped reporting: down or cut off
 	MemoryPressure  = "MemoryPressure"
 	DiskPressure    = "DiskPressure"
 	PIDPressure     = "PIDPressure"
-	NodeCordoned    = "NodeCordoned" // spec.unschedulable: new pods are not placed on the node
+	NodeCordoned    = "NodeCordoned" // marked unschedulable
 )
 
-// NodeRules returns the rules for server problems.
+// NodeRules returns the rules for node problems.
 func NodeRules() []Rule {
 	return []Rule{
 		nodeRule("node-not-ready", NodeNotReady, messages.Error,
@@ -37,6 +36,7 @@ func NodeRules() []Rule {
 	}
 }
 
+// nodeRule builds a node rule from its message.
 func nodeRule(rule, reason string, severity messages.Severity, title, text string) Base {
 	return Base{Message: messages.Message{
 		Rule:     rule,

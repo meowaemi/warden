@@ -3,6 +3,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { ObservationHistory } from './index';
 afterEach(cleanup);
 import { monitorEn } from '@/shared/i18n/locales/monitor';
+/** mock is the reply of the mocked history query, one entry of site-a, and its calls. */
 const mock = vi.hoisted(() => ({
   entries: [
     {

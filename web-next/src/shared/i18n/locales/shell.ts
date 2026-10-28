@@ -1,3 +1,4 @@
+/** shellRu holds the texts of the page frame: navigation, connection, counters. */
 export const shellRu = {
   'shell.workspace': 'Рабочее пространство',
   'shell.infrastructure': 'Удалённая инфраструктура',
@@ -46,6 +47,7 @@ export const shellRu = {
     'Показаны фактические наблюдения центра. Отсутствие проблем не гарантирует исправность всех сервисов.',
   'shell.timezone': 'Часовой пояс',
 } as const;
+/** shellEn is the English version of shellRu. */
 export const shellEn: Record<keyof typeof shellRu, string> = {
   'shell.workspace': 'Workspace',
   'shell.infrastructure': 'Remote infrastructure',

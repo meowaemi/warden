@@ -1,3 +1,4 @@
+// Package messages defines what warden reports to its users.
 package messages
 
 import (
@@ -5,14 +6,17 @@ import (
 	"time"
 )
 
+// Severity is how serious a problem is.
 type Severity int
 
+// Severities, from least to most serious.
 const (
 	Info Severity = iota
 	Warning
 	Error
 )
 
+// String returns the name of s, as it appears in JSON and logs.
 func (s Severity) String() string {
 	switch s {
 	case Info:
@@ -25,10 +29,15 @@ func (s Severity) String() string {
 		return "UNKNOWN"
 	}
 }
+
+// MarshalText writes s as its name.
 func (s Severity) MarshalText() ([]byte, error) { return []byte(s.String()), nil }
 
+// Outcome is what warden did about a problem.
 type Outcome int
 
+// Outcomes. Reported only describes a problem; Fixed and FixFailed tell how
+// a fix ended; WouldFix is a fix that is possible but was not applied.
 const (
 	Reported Outcome = iota
 	Fixed
@@ -36,6 +45,7 @@ const (
 	FixFailed
 )
 
+// String returns the name of o, as it appears in JSON and logs.
 func (o Outcome) String() string {
 	switch o {
 	case Reported:
@@ -50,8 +60,12 @@ func (o Outcome) String() string {
 		return "UNKNOWN"
 	}
 }
+
+// MarshalText writes o as its name.
 func (o Outcome) MarshalText() ([]byte, error) { return []byte(o.String()), nil }
 
+// Target is where a problem is: a container of a pod, or a node when Pod is
+// empty. Owner fields name the workload that runs the pod.
 type Target struct {
 	Namespace string `json:"namespace"`
 	Pod       string `json:"pod"`
@@ -59,10 +73,10 @@ type Target struct {
 	Node      string `json:"node,omitempty"`
 	OwnerKind string `json:"ownerKind,omitempty"`
 	OwnerName string `json:"ownerName,omitempty"`
+	OwnerUID  string `json:"ownerUID,omitempty"`
 }
 
-// String returns "namespace/pod", or "node/<name>" for a problem of the
-// node itself, which has no pod.
+// String returns namespace/pod, or node/name for a node.
 func (t Target) String() string {
 	if t.Pod == "" && t.Node != "" {
 		return "node/" + t.Node
@@ -70,11 +84,13 @@ func (t Target) String() string {
 	return t.Namespace + "/" + t.Pod
 }
 
+// Detail is one extra fact about a problem.
 type Detail struct {
 	Key   string `json:"key"`
 	Value string `json:"value"`
 }
 
+// Message is one problem as users see it. Time is when it started.
 type Message struct {
 	Severity Severity  `json:"severity"`
 	Outcome  Outcome   `json:"outcome"`
@@ -88,9 +104,12 @@ type Message struct {
 	Time     time.Time `json:"time"`
 }
 
+// Key identifies a problem across checks.
 func (m Message) Key() string {
 	return m.Target.String() + "/" + m.Target.Container + "/" + m.Reason
 }
+
+// UnmarshalText reads a severity name; an unknown name is an error.
 func (s *Severity) UnmarshalText(text []byte) error {
 	switch string(text) {
 	case "INFO":
@@ -104,6 +123,8 @@ func (s *Severity) UnmarshalText(text []byte) error {
 	}
 	return nil
 }
+
+// UnmarshalText reads an outcome name; an unknown name is an error.
 func (o *Outcome) UnmarshalText(text []byte) error {
 	switch string(text) {
 	case "REPORTED":

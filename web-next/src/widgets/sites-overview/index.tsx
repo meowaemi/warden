@@ -3,6 +3,7 @@ import { Server, ChevronRight } from 'lucide-react';
 import type { Site } from '@/shared/api/types';
 import { useI18n } from '@/shared/i18n';
 import { neverObserved } from '@/shared/lib/observed';
+/** SitesOverview lists the sites with the freshness of their data. */
 export function SitesOverview({
   sites,
   selectedID,

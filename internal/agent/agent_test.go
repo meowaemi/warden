@@ -14,14 +14,24 @@ import (
 	"warden/internal/messages"
 )
 
+// config returns an agent config with its state in a temp dir and a backlog
+// of three snapshots.
 func config(t *testing.T, url string) Config {
 	t.Helper()
 	return Config{SiteID: "remote", CenterURL: url, Token: "site-secret", StatePath: filepath.Join(t.TempDir(), "agent.json"), Interval: time.Millisecond, MaxSnapshots: 3}
 }
+
+// observation is a collector that always finds one problem.
 func observation(context.Context) (control.Snapshot, error) {
 	return control.Snapshot{Messages: []messages.Message{{Title: "problem", Severity: messages.Warning}}}, nil
 }
+
+// noExecute is an executor for tests where no command must run; it panics.
 func noExecute(context.Context, control.Command) control.Result { panic("unexpected execution") }
+
+// TestOfflineReconnectToRealCenter collects while the center is unreachable,
+// restarts the agent and checks that the backlog, cut to its limit, reaches
+// a real center.
 func TestOfflineReconnectToRealCenter(t *testing.T) {
 	st, err := control.Open(filepath.Join(t.TempDir(), "center.json"))
 	if err != nil {
@@ -72,6 +82,9 @@ func TestOfflineReconnectToRealCenter(t *testing.T) {
 		t.Fatalf("history count=%d", len(history))
 	}
 }
+
+// TestSelectiveAcknowledgement checks that only the snapshots the center
+// acknowledged are dropped, and an ack for an unsent ID is ignored.
 func TestSelectiveAcknowledgement(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		var q control.SyncRequest
@@ -100,9 +113,15 @@ func TestSelectiveAcknowledgement(t *testing.T) {
 		t.Fatal("selective ack removed wrong observations")
 	}
 }
+
+// command returns a restart for the test site, valid for a minute.
 func command() control.Command {
 	return control.Command{ID: "cmd1", SiteID: "remote", Kind: "restart_deployment", Namespace: "test", Name: "app", TargetUID: "uid1", ExpiresAt: time.Now().Add(time.Minute)}
 }
+
+// TestExecutionLedgerRestartExpiryAndPanic checks that a command runs at most
+// once across restarts, an expired one never runs, one cut off by a crash
+// becomes unknown, and an executor panic is recorded as unknown.
 func TestExecutionLedgerRestartExpiryAndPanic(t *testing.T) {
 	w, err := open(config(t, "http://unused"))
 	if err != nil {
@@ -161,6 +180,10 @@ func TestExecutionLedgerRestartExpiryAndPanic(t *testing.T) {
 		t.Fatal("panic not recorded")
 	}
 }
+
+// TestRealCenterResultSurvivesRestart executes a command from a real center,
+// restarts the agent and checks that the result is delivered and the ledger
+// still stops the command from running again.
 func TestRealCenterResultSurvivesRestart(t *testing.T) {
 	st, err := control.Open(filepath.Join(t.TempDir(), "center.json"))
 	if err != nil {
@@ -211,6 +234,8 @@ func TestRealCenterResultSurvivesRestart(t *testing.T) {
 	}
 }
 
+// TestRunCollectsWhileSyncBlocked checks that collection goes on while a sync
+// hangs, and the snapshots are on disk after the agent stops.
 func TestRunCollectsWhileSyncBlocked(t *testing.T) {
 	entered := make(chan struct{}, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -264,6 +289,8 @@ func TestRunCollectsWhileSyncBlocked(t *testing.T) {
 	}
 }
 
+// TestOversizedObservationDoesNotEvictValidBacklog checks that a too large
+// snapshot is queued as failed, without pushing older snapshots out.
 func TestOversizedObservationDoesNotEvictValidBacklog(t *testing.T) {
 	w, err := open(config(t, "http://unused"))
 	if err != nil {
@@ -286,9 +313,9 @@ func TestOversizedObservationDoesNotEvictValidBacklog(t *testing.T) {
 	}
 }
 
-// The center's clock is an hour behind the agent's. Its command deadline is
-// one minute ahead in center time, so without skew correction the agent
-// would see it as long expired and its observations as an hour in the future.
+// TestClockSkewCorrection puts the center an hour behind the agent: without
+// correction the command would look expired and snapshots would come from
+// the future.
 func TestClockSkewCorrection(t *testing.T) {
 	skew := -time.Hour
 	var sent []control.Snapshot

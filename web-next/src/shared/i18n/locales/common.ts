@@ -1,3 +1,4 @@
+/** commonRu holds texts shared by every area. */
 export const commonRu = {
   'common.documentTitle': 'Warden — управление площадками',
   'common.loading': 'Загрузка…',
@@ -29,6 +30,7 @@ export const commonRu = {
   'common.yes': 'Да',
   'common.no': 'Нет',
 };
+/** commonEn is the English version of commonRu. */
 export const commonEn = {
   'common.documentTitle': 'Warden — site operations',
   'common.loading': 'Loading…',

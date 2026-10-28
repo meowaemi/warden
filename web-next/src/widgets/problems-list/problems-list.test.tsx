@@ -4,6 +4,7 @@ import { ProblemsList } from './index';
 afterEach(cleanup);
 import { monitorRu, monitorEn } from '@/shared/i18n/locales/monitor';
 import type { Site } from '@/shared/api/types';
+/** locale switches the mocked translations between Russian and English. */
 let locale: 'ru' | 'en' = 'ru';
 vi.mock('@/shared/i18n', () => ({
   useI18n: () => ({
@@ -11,6 +12,7 @@ vi.mock('@/shared/i18n', () => ({
     date: (v: string) => v,
   }),
 }));
+/** site has a known and an unknown reason in two namespaces. */
 const site: Site = {
   id: 'a',
   last_contact: '2026-10-27T10:00:00Z',

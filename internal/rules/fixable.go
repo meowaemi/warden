@@ -5,33 +5,33 @@ import (
 	"warden/internal/messages"
 )
 
+// FixableRule is a rule that can also fix what it finds.
 type FixableRule interface {
 	Rule
-
+	// Fix tries to fix the problem of input.
 	Fix(input Input) (Result, error)
-
+	// ReportFix describes to the user how the fix ended.
 	ReportFix(result Result) messages.Message
 }
 
+// Result is the outcome of a fix.
 type Result struct {
 	Input
+	// Success is true when the fix was applied.
 	Success bool
-	Note    string
+	// Note is extra text for the user, may be empty.
+	Note string
 }
 
-// OOMLimit manages the automatic scaling of memory limits for Kubernetes pods
-// that have failed with an OOMKilled error.
-//
-// It monitors pod lifecycle events and increments the memory allocations
-// by StepPercent until the limit reaches MaxMi.
+// OOMLimit reports containers killed for lack of memory and raises their
+// limit by StepPercent, up to MaxMi.
 type OOMLimit struct {
 	Base
 	StepPercent int
 	MaxMi       int
 }
 
-// NewOOMLimit returns an OOMLimit rule that raises the limit by stepPercent
-// at a time, up to maxMi mebibytes.
+// NewOOMLimit returns an OOMLimit rule.
 func NewOOMLimit(stepPercent, maxMi int) OOMLimit {
 	return OOMLimit{
 		Base: Base{Message: messages.Message{
@@ -46,6 +46,7 @@ func NewOOMLimit(stepPercent, maxMi int) OOMLimit {
 	}
 }
 
+// Report adds the memory limit to the message.
 func (r OOMLimit) Report(input Input) messages.Message {
 	msg := r.Base.Report(input)
 	msg.Details = append(msg.Details, messages.Detail{
@@ -55,11 +56,12 @@ func (r OOMLimit) Report(input Input) messages.Message {
 	return msg
 }
 
+// Fix is not implemented yet.
 func (r OOMLimit) Fix(input Input) (Result, error) {
-
 	return Result{}, nil
 }
 
+// ReportFix describes the outcome of a fix.
 func (r OOMLimit) ReportFix(result Result) messages.Message {
 	msg := r.Report(result.Input)
 

@@ -1,3 +1,4 @@
+// Package kuber reads problems from Kubernetes and applies commands to it.
 package kuber
 
 import (
@@ -9,20 +10,21 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
+// Client talks to one cluster. A container that crashed less than
+// recentCrash ago is still reported after it runs again.
 type Client struct {
 	cs          kubernetes.Interface
 	recentCrash time.Duration
 }
 
-// New connects to the cluster described by kubeconfig and kubeContext. An empty
-// kubeconfig means the usual lookup: $KUBECONFIG, then ~/.kube/config; an
-// empty context means the kubeconfig's current one. If no kubeconfig is
-// found, the in-cluster service account of the pod is used, so an agent
-// deployed inside its own cluster needs no flags.
+// New connects using kubeconfig and kubeContext. Empty values mean
+// $KUBECONFIG or ~/.kube/config with its current context, then the
+// in-cluster service account.
 func New(kubeconfig, kubeContext string, recentCrash time.Duration) (*Client, error) {
 	loading := clientcmd.NewDefaultClientConfigLoadingRules()
 	if kubeconfig != "" {
@@ -49,6 +51,8 @@ func New(kubeconfig, kubeContext string, recentCrash time.Duration) (*Client, er
 	logger.Log.Info("kube client created", "kubeconfig", kubeconfig, "context", kubeContext, "host", cfg.Host)
 	return &Client{cs: cs, recentCrash: recentCrash}, nil
 }
+
+// Ping returns the API server version.
 func (c *Client) Ping(ctx context.Context) (string, error) {
 	v, err := c.cs.Discovery().ServerVersion()
 	if err != nil {
@@ -56,12 +60,26 @@ func (c *Client) Ping(ctx context.Context) (string, error) {
 	}
 	return v.GitVersion, nil
 }
+
+// Inputs lists the problems of all nodes and of the pods in namespace,
+// all namespaces if it is empty. Each pod problem names the pod's owner.
 func (c *Client) Inputs(ctx context.Context, namespace string) ([]rules.Input, error) {
 	start := time.Now()
 	pods, err := c.cs.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("list pods in namespace %q after %s: %w",
 			NamespaceLabel(namespace), time.Since(start).Round(time.Millisecond), err)
+	}
+
+	replicaSets, err := c.cs.AppsV1().ReplicaSets(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list replica sets in namespace %q after %s: %w",
+			NamespaceLabel(namespace), time.Since(start).Round(time.Millisecond), err)
+	}
+	owners := map[types.UID]*metav1.OwnerReference{}
+	for i := range replicaSets.Items {
+		rs := &replicaSets.Items[i]
+		owners[rs.UID] = metav1.GetControllerOf(rs)
 	}
 
 	nodes, err := c.cs.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
@@ -74,23 +92,45 @@ func (c *Client) Inputs(ctx context.Context, namespace string) ([]rules.Input, e
 		inputs = append(inputs, nodeProblems(n)...)
 	}
 	for _, p := range pods.Items {
+		first := len(inputs)
 		if in, ok := unschedulable(p); ok {
 			inputs = append(inputs, in)
 		}
 		inputs = c.appendContainers(inputs, p, p.Status.InitContainerStatuses, p.Spec.InitContainers)
 		inputs = c.appendContainers(inputs, p, p.Status.ContainerStatuses, p.Spec.Containers)
+		kind, name, uid := owner(p, owners)
+		for i := first; i < len(inputs); i++ {
+			inputs[i].OwnerKind, inputs[i].OwnerName, inputs[i].OwnerUID = kind, name, uid
+		}
 	}
 	return inputs, nil
 }
+
+// NamespaceLabel names a namespace for logs; the empty one is "all".
 func NamespaceLabel(namespace string) string {
 	if namespace == metav1.NamespaceAll {
 		return "all"
 	}
 	return namespace
 }
-// nodeProblems returns the problems of one node (server): its Ready
-// condition, resource pressure and cordoning. Nodes are cluster-wide, so they
-// are checked whatever namespace warden watches.
+
+// owner returns the workload that controls a pod. A ReplicaSet is resolved
+// to its Deployment: changing the ReplicaSet would be undone.
+func owner(p corev1.Pod, replicaSets map[types.UID]*metav1.OwnerReference) (kind, name, uid string) {
+	ref := metav1.GetControllerOf(&p)
+	if ref == nil {
+		return "", "", ""
+	}
+	if ref.Kind == "ReplicaSet" {
+		if d := replicaSets[ref.UID]; d != nil {
+			ref = d
+		}
+	}
+	return ref.Kind, ref.Name, string(ref.UID)
+}
+
+// nodeProblems reports a node that is not ready, unreachable, under
+// resource pressure or cordoned.
 func nodeProblems(n corev1.Node) []rules.Input {
 	var inputs []rules.Input
 	for _, cond := range n.Status.Conditions {
@@ -122,6 +162,8 @@ func nodeProblems(n corev1.Node) []rules.Input {
 	}
 	return inputs
 }
+
+// unschedulable reports a pod the scheduler cannot place.
 func unschedulable(p corev1.Pod) (rules.Input, bool) {
 	for _, cond := range p.Status.Conditions {
 		if cond.Type == corev1.PodScheduled &&
@@ -138,6 +180,8 @@ func unschedulable(p corev1.Pod) (rules.Input, bool) {
 	}
 	return rules.Input{}, false
 }
+
+// appendContainers adds the problems of the pod's failing containers.
 func (c *Client) appendContainers(inputs []rules.Input, p corev1.Pod, statuses []corev1.ContainerStatus, specs []corev1.Container) []rules.Input {
 	for _, st := range statuses {
 		pr, ok := c.problem(st)
@@ -161,14 +205,17 @@ func (c *Client) appendContainers(inputs []rules.Input, p corev1.Pod, statuses [
 	return inputs
 }
 
+// containerProblem is why a container fails.
 type containerProblem struct {
 	reason    string
 	message   string
 	exitCode  int32
-	since     time.Time // zero if Kubernetes has no time for it
-	recovered bool      // the container failed but is running again
+	since     time.Time
+	recovered bool
 }
 
+// problem reports whether a container is failing and why. A crash loop
+// is reported by the cause of the last crash, not by the back-off.
 func (c *Client) problem(st corev1.ContainerStatus) (containerProblem, bool) {
 	last := st.LastTerminationState.Terminated
 	failed := last != nil && last.Reason != "Completed"
@@ -199,6 +246,8 @@ func (c *Client) problem(st corev1.ContainerStatus) (containerProblem, bool) {
 
 	return containerProblem{}, false
 }
+
+// terminated describes a terminated state; its own message wins over message.
 func terminated(t *corev1.ContainerStateTerminated, message string) containerProblem {
 	if t.Message != "" {
 		message = t.Message
@@ -210,6 +259,8 @@ func terminated(t *corev1.ContainerStateTerminated, message string) containerPro
 		since:    t.FinishedAt.Time,
 	}
 }
+
+// memoryLimitMi returns a container's memory limit in MiB, 0 if it has none.
 func memoryLimitMi(specs []corev1.Container, container string) int {
 	for _, c := range specs {
 		if c.Name != container {

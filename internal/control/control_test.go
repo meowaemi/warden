@@ -12,6 +12,8 @@ import (
 	"warden/internal/messages"
 )
 
+// request sends one request with a bearer token and returns the status and
+// body.
 func request(t *testing.T, h http.Handler, method, path, token string, body any) (int, []byte) {
 	t.Helper()
 	var b bytes.Buffer
@@ -26,9 +28,15 @@ func request(t *testing.T, h http.Handler, method, path, token string, body any)
 	h.ServeHTTP(w, r)
 	return w.Code, w.Body.Bytes()
 }
+
+// command returns a restart for site a, valid for an hour.
 func command(id string) Command {
 	return Command{ID: id, SiteID: "a", Kind: "restart_deployment", Namespace: "default", Name: "app", TargetUID: "uid-1", ExpiresAt: time.Now().Add(time.Hour).UTC()}
 }
+
+// TestAuthPersistenceAndFreshness checks the tokens, that a later failed or
+// an older snapshot keeps the latest successful one after a reopen, and that
+// a site whose last collection failed is stale.
 func TestAuthPersistenceAndFreshness(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state.json")
 	s, err := Open(path)
@@ -73,6 +81,11 @@ func TestAuthPersistenceAndFreshness(t *testing.T) {
 		t.Fatalf("%d %s", code, b)
 	}
 }
+
+// TestCommandsRedeliveryIsolationAndResults checks idempotent queueing,
+// redelivery until a result arrives, that a site never gets the command of
+// another site, and that a different result for a finished command is a
+// conflict.
 func TestCommandsRedeliveryIsolationAndResults(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state.json")
 	s, _ := Open(path)
@@ -135,6 +148,9 @@ func TestCommandsRedeliveryIsolationAndResults(t *testing.T) {
 		}
 	}
 }
+
+// TestExpiryAndWriteRollback checks that an overdue queued command expires
+// instead of being sent, and that a failed write leaves memory unchanged.
 func TestExpiryAndWriteRollback(t *testing.T) {
 	s, _ := Open(filepath.Join(t.TempDir(), "state.json"))
 	h := Handler(s, "op", map[string]string{"a": "aa"}, time.Minute)
@@ -160,6 +176,10 @@ func TestExpiryAndWriteRollback(t *testing.T) {
 	}
 }
 
+// TestLateResultRefinesUnknownAndDoesNotWedgeSnapshots checks that an overdue
+// dispatched command becomes unknown, a late result replaces unknown, a
+// conflicting result after that is rejected, and a snapshot in the same sync
+// is still accepted.
 func TestLateResultRefinesUnknownAndDoesNotWedgeSnapshots(t *testing.T) {
 	s, _ := Open(filepath.Join(t.TempDir(), "state.json"))
 	h := Handler(s, "op", map[string]string{"a": "aa"}, time.Minute)
@@ -186,6 +206,9 @@ func TestLateResultRefinesUnknownAndDoesNotWedgeSnapshots(t *testing.T) {
 	}
 }
 
+// TestSuccessfulObservationWithBacklogWarningIsFresh checks that a successful
+// snapshot carrying a backlog warning keeps the site fresh and shows the
+// warning.
 func TestSuccessfulObservationWithBacklogWarningIsFresh(t *testing.T) {
 	s, _ := Open(filepath.Join(t.TempDir(), "state.json"))
 	h := Handler(s, "op", map[string]string{"a": "aa"}, time.Minute)
@@ -207,6 +230,8 @@ func TestSuccessfulObservationWithBacklogWarningIsFresh(t *testing.T) {
 	}
 }
 
+// TestSlowSyncBodyDoesNotLockOtherRequests checks that a sync whose body is
+// still arriving does not block other requests.
 func TestSlowSyncBodyDoesNotLockOtherRequests(t *testing.T) {
 	s, _ := Open(filepath.Join(t.TempDir(), "state.json"))
 	h := Handler(s, "op", map[string]string{"a": "aa"}, time.Minute)
@@ -239,6 +264,10 @@ func TestSlowSyncBodyDoesNotLockOtherRequests(t *testing.T) {
 	writer.Close()
 	<-done
 }
+
+// TestMalformedResultsDoNotBlockTelemetryOrChangeOtherSite checks that bad
+// results are rejected one by one, the snapshot sent with them is accepted,
+// and a site cannot report a result for another site's command.
 func TestMalformedResultsDoNotBlockTelemetryOrChangeOtherSite(t *testing.T) {
 	s, _ := Open(filepath.Join(t.TempDir(), "state.json"))
 	h := Handler(s, "op", map[string]string{"a": "aa", "b": "bb"}, time.Minute)
@@ -254,6 +283,9 @@ func TestMalformedResultsDoNotBlockTelemetryOrChangeOtherSite(t *testing.T) {
 	}
 }
 
+// TestBadSnapshotDoesNotPoisonBatch checks that an invalid snapshot is
+// rejected without failing the batch, a resend is accepted again, and a time
+// from the future is clamped to now.
 func TestBadSnapshotDoesNotPoisonBatch(t *testing.T) {
 	s, _ := Open(filepath.Join(t.TempDir(), "state.json"))
 	h := Handler(s, "op", map[string]string{"a": "aa"}, time.Minute)

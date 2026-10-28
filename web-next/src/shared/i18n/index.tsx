@@ -11,14 +11,19 @@ import { commonRu, commonEn } from './locales/common';
 import { monitorRu, monitorEn } from './locales/monitor';
 import { commandsRu, commandsEn } from './locales/commands';
 import { shellRu, shellEn } from './locales/shell';
+/** Locale is the UI language. */
 export type Locale = 'ru' | 'en';
+/** Theme is the color scheme. */
 export type Theme = 'dark' | 'light';
+// ru and en join the dictionaries of every area; en must have every ru key.
 const ru = { ...commonRu, ...monitorRu, ...commandsRu, ...shellRu };
 const en = { ...commonEn, ...monitorEn, ...commandsEn, ...shellEn } satisfies Record<
   keyof typeof ru,
   string
 >;
+/** TranslationKey is any key of the Russian dictionary; English must have the same keys. */
 export type TranslationKey = keyof typeof ru;
+/** I18n is what useI18n returns; date and relative print "—" for a missing date. */
 interface I18n {
   locale: Locale;
   setLocale(locale: Locale): void;
@@ -29,15 +34,19 @@ interface I18n {
   relative(value: string): string;
   timeZone: string;
 }
+// preference is "locale|theme|timeZone" in one string, so useSyncExternalStore
+// can compare it. The server always renders the initial one.
 const initialPreference = 'ru|dark|UTC';
 let preference = initialPreference;
 const listeners = new Set<() => void>();
+/** subscribe calls listener whenever the preference changes. */
 function subscribe(listener: () => void) {
   listeners.add(listener);
   return () => {
     listeners.delete(listener);
   };
 }
+/** publish applies language and theme to the page and, if persist, remembers them. */
 function publish(locale: Locale, theme: Theme, timeZone: string, persist: boolean) {
   preference = `${locale}|${theme}|${timeZone}`;
   document.documentElement.lang = locale;
@@ -52,12 +61,15 @@ function publish(locale: Locale, theme: Theme, timeZone: string, persist: boolea
   }
   listeners.forEach((listener) => listener());
 }
+/** I18nContext is empty outside I18nProvider. */
 const I18nContext = createContext<I18n | null>(null);
+/** validDate parses a date; Go's zero time means none. */
 function validDate(value: string): Date | null {
   if (!value || value.startsWith('0001-')) return null;
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
 }
+/** I18nProvider supplies translations, theme and date formatting in the viewer's time zone. */
 export function I18nProvider({ children }: { children: ReactNode }) {
   const current = useSyncExternalStore(
     subscribe,
@@ -65,6 +77,8 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     () => initialPreference,
   );
   const [locale, theme, timeZone] = current.split('|') as [Locale, Theme, string];
+  // Saved choices and the time zone are read after mount, so the first client
+  // render matches the server one.
   useEffect(() => {
     let locale: Locale = 'ru';
     let theme: Theme = 'dark';
@@ -114,6 +128,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   );
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }
+/** useI18n returns translations, theme and date formatting. */
 export function useI18n(): I18n {
   const value = useContext(I18nContext);
   if (!value) throw new Error('useI18n requires I18nProvider');

@@ -1,4 +1,4 @@
-# Init container image cannot be pulled -> Init:ErrImagePull / ImagePullBackOff.
+# Init container image cannot be pulled -> ErrImagePull / ImagePullBackOff.
 apiVersion: v1
 kind: Pod
 metadata:

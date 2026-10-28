@@ -1,3 +1,4 @@
+// Command warden watches Kubernetes sites, reports problems and applies deferred fixes.
 package main
 
 import (
@@ -23,12 +24,15 @@ import (
 	"warden/internal/store"
 )
 
+// main runs warden and exits with status 1 if it fails.
 func main() {
 	if err := run(); err != nil {
 		logger.Log.Error("warden stopped", "err", err)
 		os.Exit(1)
 	}
 }
+
+// run starts warden in the mode chosen by -mode.
 func run() error {
 	mode := flag.String("mode", "local", "local, center, agent, or demo")
 	addr := flag.String("listen", "127.0.0.1:8080", "HTTP listen address")
@@ -50,6 +54,7 @@ func run() error {
 	defer stop()
 	ruleset := append([]rules.Rule{rules.NewOOMLimit(25, 512)}, rules.NodeRules()...)
 	switch *mode {
+	// center stores site data and queues commands; it never talks to Kubernetes.
 	case "center":
 		operator := os.Getenv("WARDEN_OPERATOR_TOKEN")
 		if len(operator) < 16 {
@@ -71,6 +76,7 @@ func run() error {
 			return err
 		}
 		return serve(ctx, stop, *addr, website(control.Handler(st, operator, tokens, *stale), *web))
+	// demo runs a center and a simulated agent in one process.
 	case "demo":
 		operator := os.Getenv("WARDEN_OPERATOR_TOKEN")
 		if operator == "" {
@@ -87,6 +93,7 @@ func run() error {
 		defer cleanup()
 		logger.Log.Info("SIMULATED demo: no real Kubernetes changes", "site", "demo-site")
 		return serve(ctx, stop, *addr, website(handler, *web))
+	// agent watches one cluster and syncs with the center.
 	case "agent":
 		token := os.Getenv("WARDEN_AGENT_TOKEN")
 		if len(token) < 16 {
@@ -97,6 +104,7 @@ func run() error {
 			return err
 		}
 		return agent.Run(ctx, agent.Config{SiteID: *site, CenterURL: *center, Token: token, StatePath: *state, Interval: *interval, MaxSnapshots: *backlog}, func(c context.Context) (control.Snapshot, error) { return core.Collect(c, cl, *namespace, ruleset) }, cl.ExecuteCommand)
+	// local is a standalone checker with an in-memory store.
 	case "local":
 		cl, err := kuber.New(*kubeconfig, *kubeContext, 10*time.Minute)
 		if err != nil {
@@ -113,12 +121,16 @@ func run() error {
 		return fmt.Errorf("unknown mode %q", *mode)
 	}
 }
+
+// website serves the API under /api/ and the built frontend from dir.
 func website(apiHandler http.Handler, dir string) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/api/", apiHandler)
 	mux.Handle("/", http.FileServer(http.Dir(dir)))
 	return mux
 }
+
+// serve runs h on addr until ctx is canceled.
 func serve(ctx context.Context, stop context.CancelFunc, addr string, h http.Handler) error {
 	srv := server.New(addr, h)
 	if err := srv.Start(stop); err != nil {

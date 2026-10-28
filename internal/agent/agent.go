@@ -1,3 +1,5 @@
+// Package agent runs on a site: it collects snapshots, keeps them on disk
+// until the center acknowledges them and executes the center's commands.
 package agent
 
 import (
@@ -20,14 +22,21 @@ import (
 	"warden/internal/logger"
 )
 
+// Config configures an agent.
 type Config struct {
 	SiteID, CenterURL, Token, StatePath string
 	Interval                            time.Duration
 	MaxSnapshots                        int
 }
+
+// Collector takes one snapshot of the site.
 type Collector func(context.Context) (control.Snapshot, error)
+
+// Executor applies one command and reports its outcome.
 type Executor func(context.Context, control.Command) control.Result
 
+// diskState survives restarts. Snapshots and Results wait for the center's
+// ack; Ledger records every command ever started, so none runs twice.
 type diskState struct {
 	SiteID    string                    `json:"site_id"`
 	Snapshots []control.Snapshot        `json:"snapshots"`
@@ -35,18 +44,19 @@ type diskState struct {
 	Ledger    map[string]control.Result `json:"ledger"`
 	Dropped   uint64                    `json:"dropped_snapshots"`
 }
+
+// worker is a running agent; mu guards state and skew.
 type worker struct {
 	mu     sync.Mutex
 	cfg    Config
 	state  diskState
 	client *http.Client
-	// skew is how far the center's clock is ahead of ours, measured on every
-	// successful sync. Times stored on disk are in local time; they are
-	// shifted by skew only when sent, and command deadlines received from
-	// the center are shifted back before they are compared with time.Now.
+	// skew is the center clock minus the local clock, measured on each sync.
 	skew time.Duration
 }
 
+// open loads the state. A command left executing by a crash becomes
+// unknown: it may have been applied, so it is never retried blindly.
 func open(cfg Config) (*worker, error) {
 	w := &worker{cfg: cfg, client: &http.Client{Timeout: 10 * time.Second}}
 	b, err := os.ReadFile(cfg.StatePath)
@@ -84,6 +94,8 @@ func open(cfg Config) (*worker, error) {
 	}
 	return w, nil
 }
+
+// save writes the state atomically: temp file, fsync, rename, directory fsync.
 func (w *worker) save() error {
 	b, err := json.Marshal(w.state)
 	if err != nil {
@@ -117,6 +129,10 @@ func (w *worker) save() error {
 	}
 	return control.SyncDir(dir)
 }
+
+// collect takes a snapshot and queues it. A failed or oversized snapshot is
+// queued without messages, so the gap stays visible; a full queue drops the
+// oldest snapshots and says so in the next one.
 func (w *worker) collect(ctx context.Context, collect Collector) error {
 	s, err := collect(ctx)
 	if ctx.Err() != nil {
@@ -189,12 +205,17 @@ func (w *worker) collect(ctx context.Context, collect Collector) error {
 	w.state.Snapshots = append(w.state.Snapshots, s)
 	return w.save()
 }
+
+// syncOnce sends the oldest snapshots and results, drops what the center
+// acknowledged and executes the command it returned. Network failures are
+// not errors: the same batch goes again next time.
 func (w *worker) syncOnce(ctx context.Context, execute Executor) error {
 	w.mu.Lock()
 	n := len(w.state.Snapshots)
 	if n > 100 {
 		n = 100
 	}
+	// Times are stored in local time and sent in center time.
 	skew := w.skew
 	q := control.SyncRequest{SiteID: w.cfg.SiteID, Snapshots: append([]control.Snapshot(nil), w.state.Snapshots[:n]...)}
 	for i := range q.Snapshots {
@@ -268,8 +289,7 @@ func (w *worker) syncOnce(ctx context.Context, execute Executor) error {
 	}
 	w.mu.Lock()
 	if !reply.ServerTime.IsZero() {
-		// The center read its clock somewhere between sending and
-		// receiving; the middle of the round trip is the best guess.
+		// The center read its clock somewhere in the round trip; assume the middle.
 		rtt := time.Since(sentAt)
 		w.skew = reply.ServerTime.Sub(sentAt.Add(rtt / 2))
 	}
@@ -304,6 +324,9 @@ func (w *worker) syncOnce(ctx context.Context, execute Executor) error {
 	}
 	return nil
 }
+
+// execute runs a command at most once. The ledger entry is saved before
+// execution; a command already in the ledger only resends its result.
 func (w *worker) execute(ctx context.Context, c control.Command, execute Executor) error {
 	if ctx.Err() != nil {
 		return nil
@@ -325,20 +348,20 @@ func (w *worker) execute(ctx context.Context, c control.Command, execute Executo
 	r := control.Result{CommandID: c.ID, Status: "executing"}
 	w.state.Ledger[c.ID] = r
 	err := w.save()
-	// The deadline is in center time; from here on it is compared with the
-	// local clock, here and in the executor.
+	// The deadline is in center time; compare it with the local clock.
 	c.ExpiresAt = c.ExpiresAt.Add(-w.skew)
 	w.mu.Unlock()
 	if err != nil {
 		return err
 	}
+	invalid := c.Validate()
 	switch {
 	case !c.ExpiresAt.After(time.Now()):
 		r.Status = "expired"
 		r.Note = "expired before execution"
-	case c.Kind != "restart_deployment" || c.TargetUID == "" || c.Namespace == "" || c.Name == "":
+	case invalid != nil:
 		r.Status = "failed"
-		r.Note = "unsupported or incomplete command"
+		r.Note = "unsupported or incomplete command: " + invalid.Error()
 	default:
 		runCtx, cancel := context.WithDeadline(ctx, c.ExpiresAt)
 		r = safeExecute(runCtx, c, execute)
@@ -357,6 +380,7 @@ func (w *worker) execute(ctx context.Context, c control.Command, execute Executo
 	return w.save()
 }
 
+// safeExecute turns an executor panic into an unknown outcome.
 func safeExecute(ctx context.Context, c control.Command, execute Executor) (r control.Result) {
 	defer func() {
 		if recover() != nil {
@@ -370,6 +394,8 @@ func safeExecute(ctx context.Context, c control.Command, execute Executor) (r co
 	return
 }
 
+// Run collects and syncs every cfg.Interval until ctx is canceled.
+// Collection runs on its own, so a stalled network never stops it.
 func Run(ctx context.Context, cfg Config, collect Collector, execute Executor) error {
 	if cfg.SiteID == "" || cfg.CenterURL == "" || cfg.Token == "" || cfg.StatePath == "" || collect == nil || execute == nil {
 		return errors.New("agent requires site, center URL, token, state path, collector and executor")

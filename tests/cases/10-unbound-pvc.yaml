@@ -1,5 +1,4 @@
-# Claim with a storage class that does not exist stays unbound
-# -> Pending, Unschedulable ("unbound immediate PersistentVolumeClaims").
+# Claim with a missing storage class stays unbound -> Unschedulable.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:

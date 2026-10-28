@@ -1,4 +1,4 @@
-# No node has the required label -> Pending, Unschedulable.
+# No node has the required label -> Unschedulable.
 apiVersion: v1
 kind: Pod
 metadata:

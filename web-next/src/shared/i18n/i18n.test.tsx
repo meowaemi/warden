@@ -1,6 +1,7 @@
 import { afterEach, expect, it } from 'vitest';
 import { act, cleanup, renderHook } from '@testing-library/react';
 import { I18nProvider, useI18n } from './index';
+// Defaults, language and theme switching, and what is saved to localStorage.
 afterEach(() => {
   cleanup();
   localStorage.clear();
