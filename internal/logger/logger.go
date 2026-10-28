@@ -42,6 +42,7 @@ func problemAttrs(m messages.Message) []any {
 		"namespace", m.Target.Namespace,
 		"pod", m.Target.Pod,
 		"container", m.Target.Container,
+		"node", m.Target.Node,
 		"since", m.Time.Format(time.DateTime),
 		"title", m.Title,
 	}

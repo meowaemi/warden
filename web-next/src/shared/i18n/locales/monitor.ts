@@ -47,6 +47,13 @@ export const monitorRu = {
   'monitor.reason.Unschedulable': 'Не удалось разместить Pod',
   'monitor.reason.Error': 'Ошибка выполнения контейнера',
   'monitor.reason.CreateContainerConfigError': 'Ошибка конфигурации контейнера',
+  'monitor.server': 'Сервер',
+  'monitor.reason.NodeNotReady': 'Сервер не готов к работе',
+  'monitor.reason.NodeUnreachable': 'Сервер недоступен',
+  'monitor.reason.MemoryPressure': 'На сервере заканчивается память',
+  'monitor.reason.DiskPressure': 'На сервере заканчивается место на диске',
+  'monitor.reason.PIDPressure': 'На сервере заканчиваются идентификаторы процессов',
+  'monitor.reason.NodeCordoned': 'Сервер выведен из работы',
 } as const;
 export const monitorEn: Record<keyof typeof monitorRu, string> = {
   'monitor.sites': 'Sites',
@@ -97,4 +104,11 @@ export const monitorEn: Record<keyof typeof monitorRu, string> = {
   'monitor.reason.Unschedulable': 'Pod could not be scheduled',
   'monitor.reason.Error': 'Container execution error',
   'monitor.reason.CreateContainerConfigError': 'Container configuration error',
+  'monitor.server': 'Server',
+  'monitor.reason.NodeNotReady': 'Server not ready',
+  'monitor.reason.NodeUnreachable': 'Server unreachable',
+  'monitor.reason.MemoryPressure': 'Server low on memory',
+  'monitor.reason.DiskPressure': 'Server low on disk space',
+  'monitor.reason.PIDPressure': 'Server low on process IDs',
+  'monitor.reason.NodeCordoned': 'Server cordoned',
 };

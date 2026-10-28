@@ -1,7 +1,7 @@
 'use client';
 import { useMemo, useState } from 'react';
 import { Search, CircleAlert } from 'lucide-react';
-import type { Site, Severity } from '@/shared/api/types';
+import type { Problem, Site, Severity } from '@/shared/api/types';
 import { useI18n } from '@/shared/i18n';
 const reasonKeys = {
   OOMKilled: 'monitor.reason.OOMKilled',
@@ -11,7 +11,15 @@ const reasonKeys = {
   Unschedulable: 'monitor.reason.Unschedulable',
   Error: 'monitor.reason.Error',
   CreateContainerConfigError: 'monitor.reason.CreateContainerConfigError',
+  NodeNotReady: 'monitor.reason.NodeNotReady',
+  NodeUnreachable: 'monitor.reason.NodeUnreachable',
+  MemoryPressure: 'monitor.reason.MemoryPressure',
+  DiskPressure: 'monitor.reason.DiskPressure',
+  PIDPressure: 'monitor.reason.PIDPressure',
+  NodeCordoned: 'monitor.reason.NodeCordoned',
 } as const;
+// A problem of the server itself has a node and no pod.
+const isNode = (p: Problem) => !p.target.pod && !!p.target.node;
 export function ProblemsList({ site, unavailable }: { site: Site; unavailable: boolean }) {
   const { t, date } = useI18n();
   const [search, setSearch] = useState('');
@@ -19,14 +27,25 @@ export function ProblemsList({ site, unavailable }: { site: Site; unavailable: b
   const [namespace, setNamespace] = useState('');
   const problems = site.messages;
   const namespaces = useMemo(
-    () => Array.from(new Set(problems.map((p) => p.target.namespace))).sort(),
+    () =>
+      Array.from(new Set(problems.map((p) => p.target.namespace)))
+        .filter(Boolean)
+        .sort(),
     [problems],
   );
   const filtered = problems.filter(
     (p) =>
       (!severity || p.severity === severity) &&
       (!namespace || p.target.namespace === namespace) &&
-      [p.target.namespace, p.target.pod, p.target.container, p.reason, p.title, p.text]
+      [
+        p.target.namespace,
+        p.target.pod,
+        p.target.container,
+        p.target.node,
+        p.reason,
+        p.title,
+        p.text,
+      ]
         .join(' ')
         .toLocaleLowerCase()
         .includes(search.toLocaleLowerCase()),
@@ -107,8 +126,15 @@ export function ProblemsList({ site, unavailable }: { site: Site; unavailable: b
                   <h3>{reason ? t(reason) : p.reason}</h3>
                 </div>
                 <p className="mono problem-target">
-                  {p.target.namespace}/{p.target.pod}
-                  {p.target.container ? ` · ${p.target.container}` : ''}
+                  {isNode(p) ? (
+                    `${t('monitor.server')}: ${p.target.node}`
+                  ) : (
+                    <>
+                      {p.target.namespace}/{p.target.pod}
+                      {p.target.container ? ` · ${p.target.container}` : ''}
+                      {p.target.node ? ` · ${t('monitor.server')} ${p.target.node}` : ''}
+                    </>
+                  )}
                 </p>
                 <p className="muted">
                   {t('monitor.observed')}: {date(p.time)}

@@ -36,6 +36,8 @@ func run() error {
 	site := flag.String("site", "", "agent site identifier")
 	center := flag.String("center", "http://127.0.0.1:8080", "center URL")
 	namespace := flag.String("namespace", "", "Kubernetes namespace; empty means all")
+	kubeconfig := flag.String("kubeconfig", "", "kubeconfig path; empty means $KUBECONFIG, ~/.kube/config, then in-cluster")
+	kubeContext := flag.String("context", "", "kubeconfig context; empty means the current one")
 	interval := flag.Duration("interval", 10*time.Second, "collection and synchronization interval")
 	stale := flag.Duration("stale-after", 30*time.Second, "maximum observation age")
 	backlog := flag.Int("max-snapshots", 1000, "agent observation backlog limit")
@@ -46,7 +48,7 @@ func run() error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	ruleset := []rules.Rule{rules.NewOOMLimit(25, 512)}
+	ruleset := append([]rules.Rule{rules.NewOOMLimit(25, 512)}, rules.NodeRules()...)
 	switch *mode {
 	case "center":
 		operator := os.Getenv("WARDEN_OPERATOR_TOKEN")
@@ -90,13 +92,13 @@ func run() error {
 		if len(token) < 16 {
 			return fmt.Errorf("set WARDEN_AGENT_TOKEN with at least 16 characters")
 		}
-		cl, err := kuber.New(10 * time.Minute)
+		cl, err := kuber.New(*kubeconfig, *kubeContext, 10*time.Minute)
 		if err != nil {
 			return err
 		}
 		return agent.Run(ctx, agent.Config{SiteID: *site, CenterURL: *center, Token: token, StatePath: *state, Interval: *interval, MaxSnapshots: *backlog}, func(c context.Context) (control.Snapshot, error) { return core.Collect(c, cl, *namespace, ruleset) }, cl.ExecuteCommand)
 	case "local":
-		cl, err := kuber.New(10 * time.Minute)
+		cl, err := kuber.New(*kubeconfig, *kubeContext, 10*time.Minute)
 		if err != nil {
 			return err
 		}

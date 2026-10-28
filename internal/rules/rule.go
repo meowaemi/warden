@@ -12,7 +12,11 @@ type Rule interface {
 	Report(input Input) messages.Message
 }
 
+// Input describes one problem. For a node (server) problem PodName is empty
+// and NodeName is set; for a pod problem NodeName is the node it runs on, or
+// empty if it is not scheduled yet.
 type Input struct {
+	NodeName      string
 	PodName       string
 	Namespace     string
 	ContainerName string
@@ -47,9 +51,11 @@ func (b Base) Report(input Input) messages.Message {
 		Namespace: input.Namespace,
 		Pod:       input.PodName,
 		Container: input.ContainerName,
+		Node:      input.NodeName,
 	}
-	msg.Details = []messages.Detail{
-		{Key: "Restarts", Value: strconv.Itoa(int(input.RestartCount))},
+	msg.Details = nil
+	if input.PodName != "" {
+		msg.Details = append(msg.Details, messages.Detail{Key: "Restarts", Value: strconv.Itoa(int(input.RestartCount))})
 	}
 	if input.Message != "" {
 		msg.Details = append(msg.Details, messages.Detail{Key: "Kubernetes", Value: input.Message})

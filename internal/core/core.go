@@ -99,8 +99,11 @@ func report(r rules.Rule, in rules.Input) messages.Message {
 
 // printMessage writes a user-facing message to stdout in a readable form.
 func printMessage(m messages.Message) {
-	fmt.Printf("[%s] %s | %s/%s (%s)\n",
-		m.Severity, m.Title, m.Target.Namespace, m.Target.Pod, m.Target.Container)
+	target := m.Target.String()
+	if m.Target.Container != "" {
+		target += " (" + m.Target.Container + ")"
+	}
+	fmt.Printf("[%s] %s | %s\n", m.Severity, m.Title, target)
 	fmt.Printf("    %s\n", m.Text)
 	for _, d := range m.Details {
 		fmt.Printf("    %s: %s\n", d.Key, d.Value)

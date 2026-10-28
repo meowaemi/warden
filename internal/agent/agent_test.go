@@ -285,3 +285,45 @@ func TestOversizedObservationDoesNotEvictValidBacklog(t *testing.T) {
 		t.Fatal("oversized observation not marked failed")
 	}
 }
+
+// The center's clock is an hour behind the agent's. Its command deadline is
+// one minute ahead in center time, so without skew correction the agent
+// would see it as long expired and its observations as an hour in the future.
+func TestClockSkewCorrection(t *testing.T) {
+	skew := -time.Hour
+	var sent []control.Snapshot
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		var q control.SyncRequest
+		json.NewDecoder(r.Body).Decode(&q)
+		sent = append(sent, q.Snapshots...)
+		centerNow := time.Now().Add(skew)
+		c := command()
+		c.ExpiresAt = centerNow.Add(time.Minute)
+		json.NewEncoder(rw).Encode(control.SyncResponse{ServerTime: centerNow, Commands: []control.Command{c}})
+	}))
+	defer server.Close()
+	w, err := open(config(t, server.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	exec := func(context.Context, control.Command) control.Result {
+		calls++
+		return control.Result{Status: "applied"}
+	}
+	if err = w.syncOnce(context.Background(), exec); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 || w.state.Results["cmd1"].Status != "applied" {
+		t.Fatalf("command in center time judged by local clock: %+v", w.state.Results)
+	}
+	if err = w.collect(context.Background(), observation); err != nil {
+		t.Fatal(err)
+	}
+	if err = w.syncOnce(context.Background(), exec); err != nil {
+		t.Fatal(err)
+	}
+	if len(sent) != 1 || time.Until(sent[0].ObservedAt) > -50*time.Minute {
+		t.Fatalf("observation time not converted to center clock: %+v", sent)
+	}
+}

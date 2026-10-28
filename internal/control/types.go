@@ -36,13 +36,24 @@ type SyncRequest struct {
 	Snapshots []Snapshot `json:"snapshots"`
 	Results   []Result   `json:"results"`
 }
+// SyncResponse answers an agent sync. ServerTime is the center's clock when
+// the response was built: the agent uses it to estimate its own clock skew,
+// because command deadlines and observation times are in center time.
+// A rejected snapshot or result is still acknowledged, so the agent drops it
+// instead of resending it forever; the conflict lists say why.
 type SyncResponse struct {
-	AckIDs          []string         `json:"ack_ids"`
-	ResultAckIDs    []string         `json:"result_ack_ids"`
-	Commands        []Command        `json:"commands"`
-	ResultConflicts []ResultConflict `json:"result_conflicts,omitempty"`
+	AckIDs            []string           `json:"ack_ids"`
+	ResultAckIDs      []string           `json:"result_ack_ids"`
+	Commands          []Command          `json:"commands"`
+	ResultConflicts   []ResultConflict   `json:"result_conflicts,omitempty"`
+	SnapshotConflicts []SnapshotConflict `json:"snapshot_conflicts,omitempty"`
+	ServerTime        time.Time          `json:"server_time"`
 }
 type ResultConflict struct {
 	CommandID string `json:"command_id"`
 	Reason    string `json:"reason"`
+}
+type SnapshotConflict struct {
+	SnapshotID string `json:"snapshot_id"`
+	Reason     string `json:"reason"`
 }

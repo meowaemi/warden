@@ -3,7 +3,6 @@ package kuber
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"time"
 	"warden/internal/logger"
 	"warden/internal/rules"
@@ -12,7 +11,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/client-go/util/homedir"
 )
 
 type Client struct {
@@ -20,12 +18,21 @@ type Client struct {
 	recentCrash time.Duration
 }
 
-func New(recentCrash time.Duration) (*Client, error) {
-	path := filepath.Join(homedir.HomeDir(), ".kube", "config")
+// New connects to the cluster described by kubeconfig and kubeContext. An empty
+// kubeconfig means the usual lookup: $KUBECONFIG, then ~/.kube/config; an
+// empty context means the kubeconfig's current one. If no kubeconfig is
+// found, the in-cluster service account of the pod is used, so an agent
+// deployed inside its own cluster needs no flags.
+func New(kubeconfig, kubeContext string, recentCrash time.Duration) (*Client, error) {
+	loading := clientcmd.NewDefaultClientConfigLoadingRules()
+	if kubeconfig != "" {
+		loading.ExplicitPath = kubeconfig
+	}
+	cc := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loading, &clientcmd.ConfigOverrides{CurrentContext: kubeContext})
 
-	cfg, err := clientcmd.BuildConfigFromFlags("", path)
+	cfg, err := cc.ClientConfig()
 	if err != nil {
-		return nil, fmt.Errorf("load kubeconfig %s: %w", path, err)
+		return nil, fmt.Errorf("load kubeconfig %q context %q: %w", kubeconfig, kubeContext, err)
 	}
 	cfg.Timeout = 10 * time.Second
 
@@ -34,7 +41,12 @@ func New(recentCrash time.Duration) (*Client, error) {
 		return nil, fmt.Errorf("create clientset for %s: %w", cfg.Host, err)
 	}
 
-	logger.Log.Info("kube client created", "kubeconfig", path, "host", cfg.Host)
+	if kubeContext == "" {
+		if raw, err := cc.RawConfig(); err == nil {
+			kubeContext = raw.CurrentContext
+		}
+	}
+	logger.Log.Info("kube client created", "kubeconfig", kubeconfig, "context", kubeContext, "host", cfg.Host)
 	return &Client{cs: cs, recentCrash: recentCrash}, nil
 }
 func (c *Client) Ping(ctx context.Context) (string, error) {
@@ -52,7 +64,15 @@ func (c *Client) Inputs(ctx context.Context, namespace string) ([]rules.Input, e
 			NamespaceLabel(namespace), time.Since(start).Round(time.Millisecond), err)
 	}
 
+	nodes, err := c.cs.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list nodes after %s: %w", time.Since(start).Round(time.Millisecond), err)
+	}
+
 	var inputs []rules.Input
+	for _, n := range nodes.Items {
+		inputs = append(inputs, nodeProblems(n)...)
+	}
 	for _, p := range pods.Items {
 		if in, ok := unschedulable(p); ok {
 			inputs = append(inputs, in)
@@ -67,6 +87,40 @@ func NamespaceLabel(namespace string) string {
 		return "all"
 	}
 	return namespace
+}
+// nodeProblems returns the problems of one node (server): its Ready
+// condition, resource pressure and cordoning. Nodes are cluster-wide, so they
+// are checked whatever namespace warden watches.
+func nodeProblems(n corev1.Node) []rules.Input {
+	var inputs []rules.Input
+	for _, cond := range n.Status.Conditions {
+		reason := ""
+		switch {
+		case cond.Type == corev1.NodeReady && cond.Status == corev1.ConditionFalse:
+			reason = rules.NodeNotReady
+		case cond.Type == corev1.NodeReady && cond.Status == corev1.ConditionUnknown:
+			reason = rules.NodeUnreachable
+		case cond.Type == corev1.NodeMemoryPressure && cond.Status == corev1.ConditionTrue:
+			reason = rules.MemoryPressure
+		case cond.Type == corev1.NodeDiskPressure && cond.Status == corev1.ConditionTrue:
+			reason = rules.DiskPressure
+		case cond.Type == corev1.NodePIDPressure && cond.Status == corev1.ConditionTrue:
+			reason = rules.PIDPressure
+		}
+		if reason == "" {
+			continue
+		}
+		inputs = append(inputs, rules.Input{
+			NodeName: n.Name,
+			Reason:   reason,
+			Message:  cond.Message,
+			Since:    cond.LastTransitionTime.Time,
+		})
+	}
+	if n.Spec.Unschedulable {
+		inputs = append(inputs, rules.Input{NodeName: n.Name, Reason: rules.NodeCordoned})
+	}
+	return inputs
 }
 func unschedulable(p corev1.Pod) (rules.Input, bool) {
 	for _, cond := range p.Status.Conditions {
@@ -91,6 +145,7 @@ func (c *Client) appendContainers(inputs []rules.Input, p corev1.Pod, statuses [
 			continue
 		}
 		inputs = append(inputs, rules.Input{
+			NodeName:      p.Spec.NodeName,
 			PodName:       p.Name,
 			Namespace:     p.Namespace,
 			ContainerName: st.Name,

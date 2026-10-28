@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 )
@@ -106,8 +107,37 @@ func (s *Store) update(fn func(*state) error) error {
 	if err = os.Rename(name, s.path); err != nil {
 		return err
 	}
+	if err = SyncDir(filepath.Dir(s.path)); err != nil {
+		return err
+	}
 	s.data = next
 	return nil
+}
+
+// SyncDir flushes a directory, so a rename inside it survives power loss.
+// Windows cannot fsync a directory and makes renames durable by itself, so
+// there it does nothing.
+func SyncDir(dir string) error {
+	if runtime.GOOS == "windows" {
+		return nil
+	}
+	d, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+	return d.Sync()
+}
+
+// due reports whether any open command has passed its deadline, so a reader
+// can skip the write that expire would cause.
+func due(d *state, now time.Time) bool {
+	for _, c := range d.Commands {
+		if !terminal(c.Status) && !now.Before(c.ExpiresAt) {
+			return true
+		}
+	}
+	return false
 }
 func terminal(status string) bool {
 	return status == "applied" || status == "failed" || status == "expired" || status == "unknown"

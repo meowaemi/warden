@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -18,6 +17,7 @@ import (
 	"sync"
 	"time"
 	"warden/internal/control"
+	"warden/internal/logger"
 )
 
 type Config struct {
@@ -40,6 +40,11 @@ type worker struct {
 	cfg    Config
 	state  diskState
 	client *http.Client
+	// skew is how far the center's clock is ahead of ours, measured on every
+	// successful sync. Times stored on disk are in local time; they are
+	// shifted by skew only when sent, and command deadlines received from
+	// the center are shifted back before they are compared with time.Now.
+	skew time.Duration
 }
 
 func open(cfg Config) (*worker, error) {
@@ -110,12 +115,7 @@ func (w *worker) save() error {
 	if err = os.Rename(name, w.cfg.StatePath); err != nil {
 		return err
 	}
-	d, err := os.Open(dir)
-	if err != nil {
-		return err
-	}
-	defer d.Close()
-	return d.Sync()
+	return control.SyncDir(dir)
 }
 func (w *worker) collect(ctx context.Context, collect Collector) error {
 	s, err := collect(ctx)
@@ -163,7 +163,7 @@ func (w *worker) collect(ctx context.Context, collect Collector) error {
 		n := len(w.state.Snapshots) - w.cfg.MaxSnapshots + 1
 		w.state.Snapshots = w.state.Snapshots[n:]
 		w.state.Dropped += uint64(n)
-		log.Printf("agent snapshot backlog full: discarded %d oldest observations; total=%d", n, w.state.Dropped)
+		logger.Log.Warn("agent snapshot backlog full: oldest observations discarded", "discarded", n, "total", w.state.Dropped)
 	}
 	queueBytes := len(encoded)
 	for _, old := range w.state.Snapshots {
@@ -178,7 +178,7 @@ func (w *worker) collect(ctx context.Context, collect Collector) error {
 		queueBytes -= len(v)
 		w.state.Snapshots = w.state.Snapshots[1:]
 		w.state.Dropped++
-		log.Printf("agent backlog exceeded 32 MiB: oldest observation discarded")
+		logger.Log.Warn("agent backlog exceeded 32 MiB: oldest observation discarded", "total", w.state.Dropped)
 	}
 	if w.state.Dropped > 0 {
 		if s.Error != "" {
@@ -195,8 +195,13 @@ func (w *worker) syncOnce(ctx context.Context, execute Executor) error {
 	if n > 100 {
 		n = 100
 	}
+	skew := w.skew
 	q := control.SyncRequest{SiteID: w.cfg.SiteID, Snapshots: append([]control.Snapshot(nil), w.state.Snapshots[:n]...)}
+	for i := range q.Snapshots {
+		q.Snapshots[i].ObservedAt = q.Snapshots[i].ObservedAt.Add(skew)
+	}
 	for _, r := range w.state.Results {
+		r.FinishedAt = r.FinishedAt.Add(skew)
 		q.Results = append(q.Results, r)
 	}
 	sort.Slice(q.Results, func(i, j int) bool {
@@ -229,23 +234,27 @@ func (w *worker) syncOnce(ctx context.Context, execute Executor) error {
 	}
 	req.Header.Set("Authorization", "Bearer "+w.cfg.Token)
 	req.Header.Set("Content-Type", "application/json")
+	sentAt := time.Now()
 	resp, err := w.client.Do(req)
 	if err != nil {
-		log.Printf("agent sync unavailable: %v", err)
+		logger.Log.Warn("agent sync unavailable", "err", err)
 		return nil
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("agent sync rejected: HTTP %d", resp.StatusCode)
+		logger.Log.Warn("agent sync rejected", "status", resp.StatusCode)
 		return nil
 	}
 	var reply control.SyncResponse
 	if err = json.NewDecoder(io.LimitReader(resp.Body, 2<<20)).Decode(&reply); err != nil {
-		log.Printf("agent sync invalid response: %v", err)
+		logger.Log.Warn("agent sync invalid response", "err", err)
 		return nil
 	}
 	for _, conflict := range reply.ResultConflicts {
-		log.Printf("agent result %s rejected by center: %s", conflict.CommandID, conflict.Reason)
+		logger.Log.Warn("agent result rejected by center", "command", conflict.CommandID, "reason", conflict.Reason)
+	}
+	for _, conflict := range reply.SnapshotConflicts {
+		logger.Log.Warn("agent snapshot rejected by center", "snapshot", conflict.SnapshotID, "reason", conflict.Reason)
 	}
 	sent := map[string]bool{}
 	for _, s := range q.Snapshots {
@@ -258,6 +267,12 @@ func (w *worker) syncOnce(ctx context.Context, execute Executor) error {
 		}
 	}
 	w.mu.Lock()
+	if !reply.ServerTime.IsZero() {
+		// The center read its clock somewhere between sending and
+		// receiving; the middle of the round trip is the best guess.
+		rtt := time.Since(sentAt)
+		w.skew = reply.ServerTime.Sub(sentAt.Add(rtt / 2))
+	}
 	kept := w.state.Snapshots[:0]
 	for _, s := range w.state.Snapshots {
 		if !ack[s.ID] {
@@ -310,6 +325,9 @@ func (w *worker) execute(ctx context.Context, c control.Command, execute Executo
 	r := control.Result{CommandID: c.ID, Status: "executing"}
 	w.state.Ledger[c.ID] = r
 	err := w.save()
+	// The deadline is in center time; from here on it is compared with the
+	// local clock, here and in the executor.
+	c.ExpiresAt = c.ExpiresAt.Add(-w.skew)
 	w.mu.Unlock()
 	if err != nil {
 		return err

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"reflect"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 	"warden/internal/messages"
@@ -108,8 +109,14 @@ func Handler(st *Store, operatorToken string, siteTokens map[string]string, stal
 				w.WriteHeader(405)
 				return
 			}
+			ids := make([]string, 0, len(st.data.Sites))
+			for id := range st.data.Sites {
+				ids = append(ids, id)
+			}
+			sort.Strings(ids)
 			views := []any{}
-			for _, s := range st.data.Sites {
+			for _, id := range ids {
+				s := st.data.Sites[id]
 				ms := []any{}
 				if s.Latest != nil {
 					for _, m := range s.Latest.Messages {
@@ -134,9 +141,11 @@ func Handler(st *Store, operatorToken string, siteTokens map[string]string, stal
 			write(w, 200, h)
 		case "/api/commands":
 			if r.Method == "GET" {
-				if err := st.update(func(d *state) error { expire(d, now); return nil }); err != nil {
-					problem(w, err)
-					return
+				if due(&st.data, now) {
+					if err := st.update(func(d *state) error { expire(d, now); return nil }); err != nil {
+						problem(w, err)
+						return
+					}
 				}
 				cs := []Command{}
 				for _, c := range st.data.Commands {
@@ -202,7 +211,7 @@ func Handler(st *Store, operatorToken string, siteTokens map[string]string, stal
 				problem(w, fail(400, "batch exceeds 100 entries"))
 				return
 			}
-			resp := SyncResponse{AckIDs: []string{}, ResultAckIDs: []string{}, Commands: []Command{}}
+			resp := SyncResponse{AckIDs: []string{}, ResultAckIDs: []string{}, Commands: []Command{}, ServerTime: now}
 			err := st.update(func(d *state) error {
 				s := d.Sites[site]
 				if s == nil {
@@ -213,19 +222,35 @@ func Handler(st *Store, operatorToken string, siteTokens map[string]string, stal
 					d.Sites[site] = s
 				}
 				s.LastContact = now
+				// A bad snapshot is acknowledged and reported instead of failing
+				// the whole request: otherwise the agent would resend the same
+				// batch forever and nothing after it would ever arrive.
 				for _, snap := range req.Snapshots {
+					reject := func(reason string) {
+						resp.AckIDs = append(resp.AckIDs, snap.ID)
+						resp.SnapshotConflicts = append(resp.SnapshotConflicts, SnapshotConflict{SnapshotID: snap.ID, Reason: reason})
+					}
 					if snap.SiteID != site {
-						return fail(403, "snapshot site identity mismatch")
+						reject("snapshot site identity mismatch")
+						continue
 					}
-					if !identifier.MatchString(snap.ID) || snap.ObservedAt.IsZero() || snap.ObservedAt.After(now.Add(time.Minute)) || len(snap.Messages) > 2000 || len(snap.Error) > 4096 {
-						return fail(400, "invalid snapshot")
+					if !identifier.MatchString(snap.ID) || snap.ObservedAt.IsZero() || len(snap.Messages) > 2000 || len(snap.Error) > 4096 {
+						reject("invalid snapshot")
+						continue
 					}
+					// The agent corrects its clock by the skew it measured, but
+					// before its first sync it cannot know it. A time from the
+					// future is clamped, never trusted: it would keep the site
+					// fresh after the agent goes silent.
+					if snap.ObservedAt.After(now) {
+						snap.ObservedAt = now
+					}
+					// IDs are random 128-bit values chosen by this site's agent,
+					// so the same ID is a resend, even if a resend carries a
+					// slightly different clock correction.
 					exists := false
 					for _, old := range s.History {
 						if old.ID == snap.ID {
-							if !reflect.DeepEqual(old, snap) {
-								return fail(409, "snapshot ID conflict")
-							}
 							exists = true
 							break
 						}
@@ -272,12 +297,17 @@ func Handler(st *Store, operatorToken string, siteTokens map[string]string, stal
 						reject("invalid result status")
 						continue
 					}
-					if res.FinishedAt.IsZero() || res.FinishedAt.After(now.Add(time.Minute)) || len(res.Note) > 4096 {
+					if res.FinishedAt.IsZero() || len(res.Note) > 4096 {
 						reject("invalid result timestamp or note")
 						continue
 					}
+					if res.FinishedAt.After(now) {
+						res.FinishedAt = now
+					}
+					// FinishedAt is left out of the comparison: a resend carries
+					// the agent's latest clock correction, not the first one.
 					old, hasResult := d.Results[c.ID]
-					if hasResult && reflect.DeepEqual(old, res) {
+					if hasResult && old.Status == res.Status && old.Note == res.Note {
 						resp.ResultAckIDs = append(resp.ResultAckIDs, c.ID)
 						continue
 					}

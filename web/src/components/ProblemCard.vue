@@ -9,7 +9,9 @@ const props = defineProps({
 
 const target = computed(() => {
   const t = props.problem.target
-  return t.container ? `${t.namespace}/${t.pod} · ${t.container}` : `${t.namespace}/${t.pod}`
+  if (!t.pod && t.node) return `server ${t.node}`
+  const pod = t.container ? `${t.namespace}/${t.pod} · ${t.container}` : `${t.namespace}/${t.pod}`
+  return t.node ? `${pod} · server ${t.node}` : pod
 })
 
 // rows are the problem's details followed by the fields every problem has.

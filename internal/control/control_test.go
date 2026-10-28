@@ -253,3 +253,24 @@ func TestMalformedResultsDoNotBlockTelemetryOrChangeOtherSite(t *testing.T) {
 		t.Fatalf("invalid receipt blocked telemetry or spoofed another site: %d %s", code, b)
 	}
 }
+
+func TestBadSnapshotDoesNotPoisonBatch(t *testing.T) {
+	s, _ := Open(filepath.Join(t.TempDir(), "state.json"))
+	h := Handler(s, "op", map[string]string{"a": "aa"}, time.Minute)
+	now := time.Now().UTC()
+	bad := Snapshot{ID: "bad", SiteID: "a"}
+	future := Snapshot{ID: "future", SiteID: "a", ObservedAt: now.Add(time.Hour), Collected: true}
+	req := SyncRequest{SiteID: "a", Snapshots: []Snapshot{bad, future}}
+	for i := 0; i < 2; i++ {
+		code, b := request(t, h, "POST", "/api/agent/sync", "aa", req)
+		var out SyncResponse
+		_ = json.Unmarshal(b, &out)
+		if code != 200 || len(out.AckIDs) != 2 || len(out.SnapshotConflicts) != 1 || out.ServerTime.IsZero() {
+			t.Fatalf("batch poisoned or resend refused: %d %s", code, b)
+		}
+	}
+	site := s.data.Sites["a"]
+	if len(site.History) != 1 || site.LastSuccess.After(time.Now()) {
+		t.Fatalf("future observation trusted or duplicated: %+v", site)
+	}
+}

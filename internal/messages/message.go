@@ -61,7 +61,12 @@ type Target struct {
 	OwnerName string `json:"ownerName,omitempty"`
 }
 
+// String returns "namespace/pod", or "node/<name>" for a problem of the
+// node itself, which has no pod.
 func (t Target) String() string {
+	if t.Pod == "" && t.Node != "" {
+		return "node/" + t.Node
+	}
 	return t.Namespace + "/" + t.Pod
 }
 

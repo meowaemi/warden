@@ -1,3 +1,15 @@
+# Permissions for a warden agent running as a pod inside its own cluster.
+# With no -kubeconfig the agent uses this ServiceAccount (in-cluster config).
+# The Role covers one namespace only, so start the agent with
+# -namespace=demo; listing pods in all namespaces would need a ClusterRole.
+# Nodes (servers) are cluster-wide, so reading them needs the ClusterRole
+# at the end of this file.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: warden-site
+  namespace: demo
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -10,3 +22,39 @@ rules:
   - apiGroups: ["apps"]
     resources: ["deployments"]
     verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: warden-site
+  namespace: demo
+subjects:
+  - kind: ServiceAccount
+    name: warden-site
+    namespace: demo
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: warden-site
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: warden-site-nodes
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: warden-site-nodes
+subjects:
+  - kind: ServiceAccount
+    name: warden-site
+    namespace: demo
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: warden-site-nodes
